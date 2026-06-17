@@ -1,0 +1,195 @@
+# Go Backend HTTP Server Template
+
+A production-ready starting point for building HTTP backend services in Go.
+It ships with a clean, layered architecture (handler → service → repository),
+sensible defaults, and the plumbing most services need so you can start writing
+business logic on day one.
+
+## Features
+
+- **Layered architecture** — clear separation between transport, business
+  logic, and data access.
+- **[Echo](https://echo.labstack.com/)** web framework with request ID,
+  logging, and panic-recovery middleware.
+- **[GORM](https://gorm.io/)** ORM with PostgreSQL and a connection pool.
+- **Environment-based config** via [caarlos0/env](https://github.com/caarlos0/env)
+  with sane defaults — runs out of the box.
+- **Structured JSON logging** with the standard library `log/slog`.
+- **Consistent JSON responses** and a structured application-error type.
+- **SQL migrations** managed with [golang-migrate](https://github.com/golang-migrate/migrate)
+  (run manually, not on startup, for full control).
+- **Graceful shutdown** on `SIGINT`/`SIGTERM`.
+- **Dockerfile** with a multi-stage build.
+
+## Tech Stack
+
+| Concern        | Choice                                  |
+| -------------- | --------------------------------------- |
+| Language       | Go 1.26                                 |
+| HTTP framework | Echo v4                                 |
+| ORM / Database | GORM + PostgreSQL                       |
+| Config         | caarlos0/env                            |
+| Migrations     | golang-migrate                          |
+| Logging        | log/slog (JSON)                         |
+
+## Project Structure
+
+```
+.
+├── cmd/server/          # Application entrypoint (wiring + graceful shutdown)
+├── configs/             # Configuration loading from the environment
+├── internal/            # Private application code
+│   ├── handler/         # HTTP transport layer (Echo handlers)
+│   ├── service/         # Business logic and validation
+│   ├── repository/      # Data access (GORM)
+│   └── router/          # Route registration and middleware
+├── pkg/                 # Reusable, importable packages
+│   ├── apperror/        # Structured application error type
+│   ├── database/        # PostgreSQL connection helper
+│   └── response/        # Uniform JSON response helpers
+├── migrations/          # SQL migrations (*.up.sql / *.down.sql)
+├── Dockerfile
+└── Makefile
+```
+
+### Request flow
+
+```
+HTTP request
+   │
+   ▼
+router ──► handler ──► service ──► repository ──► PostgreSQL
+                          │
+                  validation & domain rules
+```
+
+Each layer depends only on the interface of the layer below it, which keeps the
+code testable (mock a repository to test a service, mock a service to test a
+handler) and makes the data store easy to swap.
+
+## Getting Started
+
+### Prerequisites
+
+- [Go 1.26+](https://go.dev/dl/)
+- A running [PostgreSQL](https://www.postgresql.org/) instance
+- [golang-migrate](https://github.com/golang-migrate/migrate/tree/master/cmd/migrate)
+  CLI (for migrations)
+
+### Setup
+
+```bash
+# 1. Copy the environment template and adjust values
+cp .env.example .env
+
+# 2. Install dependencies
+go mod download
+
+# 3. Apply database migrations
+make migrate-up
+
+# 4. Run the server
+make run
+```
+
+The server listens on `http://localhost:8080` by default.
+
+### Using this as a template
+
+This repo is meant to be cloned and renamed. Update the module path to your own:
+
+```bash
+go mod edit -module github.com/<org>/<repo>
+grep -rl 'TranTheTuan/YOUR-REPO-NAME' . | xargs sed -i 's#TranTheTuan/YOUR-REPO-NAME#<org>/<repo>#g'
+```
+
+## Configuration
+
+Configuration is read from environment variables (see [`.env.example`](.env.example)).
+All values have defaults, so the server runs without any configuration.
+
+| Variable                  | Default       | Description                       |
+| ------------------------- | ------------- | -------------------------------- |
+| `ENV`                     | `development` | Deployment environment           |
+| `SERVER_HOST`             | `0.0.0.0`     | Bind address                     |
+| `SERVER_PORT`             | `8080`        | HTTP port                        |
+| `SERVER_READ_TIMEOUT`     | `5s`          | Request read timeout             |
+| `SERVER_WRITE_TIMEOUT`    | `10s`         | Response write timeout           |
+| `SERVER_IDLE_TIMEOUT`     | `120s`        | Keep-alive idle timeout          |
+| `SERVER_SHUTDOWN_TIMEOUT` | `10s`         | Graceful shutdown grace period   |
+| `DB_HOST`                 | `localhost`   | PostgreSQL host                  |
+| `DB_PORT`                 | `5432`        | PostgreSQL port                  |
+| `DB_USER`                 | `postgres`    | PostgreSQL user                  |
+| `DB_PASSWORD`             | `postgres`    | PostgreSQL password              |
+| `DB_NAME`                 | `app`         | Database name                    |
+| `DB_SSLMODE`              | `disable`     | SSL mode                         |
+| `DB_TIMEZONE`             | `UTC`         | Connection time zone             |
+| `DB_MAX_OPEN_CONNS`       | `25`          | Max open connections             |
+| `DB_MAX_IDLE_CONNS`       | `25`          | Max idle connections             |
+| `DB_CONN_MAX_LIFETIME`    | `5m`          | Max connection lifetime          |
+
+## Database Migrations
+
+Migrations live in [`migrations/`](migrations/) and are run manually via the
+Makefile — they are **not** executed on server startup, so you stay in control
+of when schema changes are applied.
+
+```bash
+make migrate-create NAME=add_orders_table   # generate a new migration pair
+make migrate-up                             # apply all pending migrations
+make migrate-down NUM=1                      # roll back the last migration
+make migrate-version                         # print the current version
+```
+
+## API
+
+| Method | Path           | Description        |
+| ------ | -------------- | ------------------ |
+| GET    | `/healthz`     | Health check       |
+| POST   | `/users`       | Create a user      |
+| GET    | `/users`       | List users         |
+| GET    | `/users/:id`   | Get a user by ID   |
+
+Responses use a uniform envelope:
+
+```jsonc
+// Success
+{ "data": { "id": 1, "name": "Alice", "email": "alice@example.com" } }
+
+// Error
+{ "error": { "code": "NOT_FOUND", "message": "user not found" } }
+```
+
+Example:
+
+```bash
+curl -X POST localhost:8080/users \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Alice","email":"alice@example.com"}'
+```
+
+The `users` resource is a worked example demonstrating the full handler →
+service → repository flow. Replace it with your own domain.
+
+## Make Targets
+
+Run `make help` to list all targets:
+
+| Target            | Description                          |
+| ----------------- | ------------------------------------ |
+| `make run`        | Run the HTTP server                  |
+| `make build`      | Build the binary into `./build/main` |
+| `make tidy`       | Tidy module dependencies             |
+| `make test`       | Run the test suite                   |
+| `make migrate-*`  | Database migration commands          |
+
+## Docker
+
+```bash
+docker build -t my-service .
+docker run --rm -p 8080:8080 --env-file .env my-service
+```
+
+## License
+
+Released under the [MIT License](LICENSE).
