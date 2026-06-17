@@ -6,7 +6,9 @@ package router
 import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	echoSwagger "github.com/swaggo/echo-swagger"
 
+	_ "github.com/TranTheTuan/go-shortener/docs/swagger" // generated OpenAPI spec
 	"github.com/TranTheTuan/go-shortener/internal/handler"
 	appmw "github.com/TranTheTuan/go-shortener/internal/middleware"
 )
@@ -36,6 +38,9 @@ func New(h Handlers, apiKeys []string) *echo.Echo {
 
 func registerRoutes(e *echo.Echo, h Handlers, apiKeys []string) {
 	e.GET("/healthz", h.Health.Health)
+
+	// Swagger UI (browse at /swagger/index.html).
+	e.GET("/swagger/*", echoSwagger.WrapHandler)
 
 	users := e.Group("/users")
 	users.POST("", h.User.Create)

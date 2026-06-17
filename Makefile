@@ -5,7 +5,7 @@ export
 MIGRATIONS_PATH ?= migrations
 DB_URL := postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)
 
-.PHONY: help run build tidy test \
+.PHONY: help run build tidy test swag \
 	migrate-create migrate-up migrate-down migrate-force migrate-version
 
 help: ## Show this help.
@@ -23,6 +23,9 @@ tidy: ## Tidy module dependencies.
 
 test: ## Run the test suite.
 	go test ./...
+
+swag: ## Regenerate the Swagger/OpenAPI docs into docs/swagger (requires swag CLI).
+	swag init -g cmd/server/main.go -o docs/swagger --parseDependency --parseInternal
 
 ## --- Database migrations (requires golang-migrate CLI) ---
 ## Install: https://github.com/golang-migrate/migrate/tree/master/cmd/migrate

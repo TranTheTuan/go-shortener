@@ -20,6 +20,14 @@ import (
 	"github.com/TranTheTuan/go-shortener/pkg/database"
 )
 
+// @title                      Go URL Shortener API
+// @version                    1.0
+// @description                URL shortener with click analytics, built on Echo + GORM + PostgreSQL.
+// @description                All responses use a uniform envelope: success payloads under `data`, errors under `error`.
+// @BasePath                   /
+// @securityDefinitions.apikey ApiKeyAuth
+// @in                         header
+// @name                       X-API-Key
 func main() {
 	if err := run(); err != nil {
 		slog.Error("server exited with error", "error", err)

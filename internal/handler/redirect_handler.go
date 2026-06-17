@@ -25,6 +25,16 @@ func NewRedirectHandler(links service.LinkService, analytics service.AnalyticsSe
 // Redirect handles GET /:code. It resolves the code to its original URL and
 // issues a 302. The click is recorded asynchronously so analytics never delays
 // the redirect; a lost click on crash is acceptable.
+//
+// @Summary      Redirect to the original URL
+// @Description  Resolves a short code and issues a 302 redirect. Records the click asynchronously.
+// @Tags         redirect
+// @Produce      json
+// @Param        code  path  string  true  "Short code"
+// @Success      302   "redirect to the original URL"
+// @Failure      404   {object}  response.Envelope  "short link not found"
+// @Failure      410   {object}  response.Envelope  "short link has expired"
+// @Router       /{code} [get]
 func (h *RedirectHandler) Redirect(c echo.Context) error {
 	link, err := h.links.Resolve(c.Request().Context(), c.Param("code"))
 	if err != nil {

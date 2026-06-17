@@ -21,6 +21,13 @@ func NewHealthHandler() *HealthHandler {
 
 // Health responds with a simple status payload, suitable for load-balancer
 // and orchestrator health checks.
+//
+// @Summary      Health check
+// @Description  Liveness/readiness probe.
+// @Tags         health
+// @Produce      json
+// @Success      200  {object}  response.Envelope
+// @Router       /healthz [get]
 func (h *HealthHandler) Health(c echo.Context) error {
 	return response.Success(c, http.StatusOK, map[string]string{"status": "ok"})
 }
