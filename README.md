@@ -100,7 +100,7 @@ This repo is meant to be cloned and renamed. Update the module path to your own:
 
 ```bash
 go mod edit -module github.com/<org>/<repo>
-grep -rl 'TranTheTuan/YOUR-REPO-NAME' . | xargs sed -i 's#TranTheTuan/YOUR-REPO-NAME#<org>/<repo>#g'
+grep -rl 'TranTheTuan/go-shortener' . | xargs sed -i 's#TranTheTuan/go-shortener#<org>/<repo>#g'
 ```
 
 ## Configuration
@@ -127,6 +127,9 @@ All values have defaults, so the server runs without any configuration.
 | `DB_MAX_OPEN_CONNS`       | `25`          | Max open connections             |
 | `DB_MAX_IDLE_CONNS`       | `25`          | Max idle connections             |
 | `DB_CONN_MAX_LIFETIME`    | `5m`          | Max connection lifetime          |
+| `SHORTENER_BASE_URL`      | `http://localhost:8080` | Origin used to build short URLs |
+| `SHORTENER_API_KEYS`      | _(empty)_     | Comma-separated keys for `X-API-Key` (empty = reject all writes) |
+| `SHORTENER_CODE_LENGTH`   | `7`           | Length of generated short codes  |
 
 ## Database Migrations
 
@@ -143,12 +146,33 @@ make migrate-version                         # print the current version
 
 ## API
 
-| Method | Path           | Description        |
-| ------ | -------------- | ------------------ |
-| GET    | `/healthz`     | Health check       |
-| POST   | `/users`       | Create a user      |
-| GET    | `/users`       | List users         |
-| GET    | `/users/:id`   | Get a user by ID   |
+| Method | Path                      | Auth    | Description                        |
+| ------ | ------------------------- | ------- | --------------------------------- |
+| GET    | `/healthz`                | —       | Health check                      |
+| POST   | `/users`                  | —       | Create a user                     |
+| GET    | `/users`                  | —       | List users                        |
+| GET    | `/users/:id`              | —       | Get a user by ID                  |
+| POST   | `/api/links`              | API key | Create a short link               |
+| GET    | `/api/links/:code/stats`  | API key | Click stats for a short link      |
+| GET    | `/:code`                  | —       | Redirect (302) to the original URL |
+
+### URL shortener
+
+Create a short link (the `X-API-Key` header must match one of `SHORTENER_API_KEYS`).
+`expires_at` is optional (RFC 3339); omit it for a link that never expires.
+
+```bash
+curl -X POST localhost:8080/api/links \
+  -H 'X-API-Key: dev-key-1' \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://example.com","expires_at":"2030-01-01T00:00:00Z"}'
+# → { "data": { "short_code": "Ab3xY7q", "short_url": "http://localhost:8080/Ab3xY7q", ... } }
+
+curl -i localhost:8080/Ab3xY7q                               # 302 → https://example.com
+curl localhost:8080/api/links/Ab3xY7q/stats -H 'X-API-Key: dev-key-1'
+```
+
+Visiting an expired link returns `410 Gone`; an unknown code returns `404`.
 
 Responses use a uniform envelope:
 

@@ -1,4 +1,4 @@
-module github.com/TranTheTuan/YOUR-REPO-NAME
+module github.com/TranTheTuan/go-shortener
 
 go 1.26
 

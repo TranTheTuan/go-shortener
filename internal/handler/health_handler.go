@@ -8,7 +8,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	"github.com/TranTheTuan/YOUR-REPO-NAME/pkg/response"
+	"github.com/TranTheTuan/go-shortener/pkg/response"
 )
 
 // HealthHandler serves liveness/readiness checks.
