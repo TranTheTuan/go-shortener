@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/TranTheTuan/YOUR-REPO-NAME/internal/repository"
-	"github.com/TranTheTuan/YOUR-REPO-NAME/pkg/apperror"
+	"github.com/TranTheTuan/go-shortener/internal/repository"
+	"github.com/TranTheTuan/go-shortener/pkg/apperror"
 )
 
 // CreateUserInput carries the data required to create a user.

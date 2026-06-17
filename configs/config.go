@@ -13,9 +13,21 @@ import (
 // Config is the top-level configuration container. Nested sections are given
 // an envPrefix so their variables are namespaced (e.g. DB_HOST, SERVER_PORT).
 type Config struct {
-	Env      string         `env:"ENV" envDefault:"development"`
-	Server   ServerConfig   `envPrefix:"SERVER_"`
-	Database DatabaseConfig `envPrefix:"DB_"`
+	Env       string          `env:"ENV" envDefault:"development"`
+	Server    ServerConfig    `envPrefix:"SERVER_"`
+	Database  DatabaseConfig  `envPrefix:"DB_"`
+	Shortener ShortenerConfig `envPrefix:"SHORTENER_"`
+}
+
+// ShortenerConfig holds URL-shortener settings.
+type ShortenerConfig struct {
+	// BaseURL is the public origin used to build short URLs (e.g. https://sho.rt).
+	BaseURL string `env:"BASE_URL" envDefault:"http://localhost:8080"`
+	// APIKeys is the set of keys accepted on the X-API-Key header. An empty set
+	// rejects every write request (fail-closed).
+	APIKeys []string `env:"API_KEYS" envSeparator:","`
+	// CodeLength is the number of base62 characters in generated short codes.
+	CodeLength int `env:"CODE_LENGTH" envDefault:"7"`
 }
 
 // ServerConfig holds the HTTP server settings.

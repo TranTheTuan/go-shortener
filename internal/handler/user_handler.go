@@ -6,9 +6,9 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	"github.com/TranTheTuan/YOUR-REPO-NAME/internal/service"
-	"github.com/TranTheTuan/YOUR-REPO-NAME/pkg/apperror"
-	"github.com/TranTheTuan/YOUR-REPO-NAME/pkg/response"
+	"github.com/TranTheTuan/go-shortener/internal/service"
+	"github.com/TranTheTuan/go-shortener/pkg/apperror"
+	"github.com/TranTheTuan/go-shortener/pkg/response"
 )
 
 // UserHandler exposes HTTP endpoints for the user resource.

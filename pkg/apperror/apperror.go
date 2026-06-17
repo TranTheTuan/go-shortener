@@ -67,6 +67,12 @@ func Conflict(message string) *Error {
 	return New(http.StatusConflict, "CONFLICT", message)
 }
 
+// Gone reports a resource that existed but is no longer available (HTTP 410),
+// e.g. an expired short link.
+func Gone(message string) *Error {
+	return New(http.StatusGone, "GONE", message)
+}
+
 // Internal reports an unexpected server-side failure (HTTP 500). The cause is
 // wrapped for logging but never shown to clients.
 func Internal(err error) *Error {

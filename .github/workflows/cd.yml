@@ -2,7 +2,7 @@ name: CD
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   workflow_dispatch:
 
 concurrency:
@@ -16,11 +16,11 @@ env:
   # --- Image (Docker Hub) ---
   # Full image = <DOCKERHUB_USERNAME>/<IMAGE_NAME>. DOCKERHUB_USERNAME and
   # DOCKERHUB_TOKEN are configured in repository secrets.
-  IMAGE_NAME: YOUR-IMAGE-NAME
+  IMAGE_NAME: go-shortener
 
   # --- GitOps (ArgoCD reads from this repo) ---
-  GITOPS_REPO: your-org/your-gitops-repo
-  VALUES_PATH: apps/your-service/values.yaml
+  GITOPS_REPO: TranTheTuan/go-shortener-infra
+  VALUES_PATH: values.yaml
 
 jobs:
   build-and-push:

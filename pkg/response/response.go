@@ -9,7 +9,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	"github.com/TranTheTuan/YOUR-REPO-NAME/pkg/apperror"
+	"github.com/TranTheTuan/go-shortener/pkg/apperror"
 )
 
 // Envelope is the uniform response body.

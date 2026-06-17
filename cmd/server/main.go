@@ -12,12 +12,12 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/TranTheTuan/YOUR-REPO-NAME/configs"
-	"github.com/TranTheTuan/YOUR-REPO-NAME/internal/handler"
-	"github.com/TranTheTuan/YOUR-REPO-NAME/internal/repository"
-	"github.com/TranTheTuan/YOUR-REPO-NAME/internal/router"
-	"github.com/TranTheTuan/YOUR-REPO-NAME/internal/service"
-	"github.com/TranTheTuan/YOUR-REPO-NAME/pkg/database"
+	"github.com/TranTheTuan/go-shortener/configs"
+	"github.com/TranTheTuan/go-shortener/internal/handler"
+	"github.com/TranTheTuan/go-shortener/internal/repository"
+	"github.com/TranTheTuan/go-shortener/internal/router"
+	"github.com/TranTheTuan/go-shortener/internal/service"
+	"github.com/TranTheTuan/go-shortener/pkg/database"
 )
 
 func main() {
@@ -51,10 +51,17 @@ func run() error {
 	userRepo := repository.NewUserRepository(db)
 	userSvc := service.NewUserService(userRepo)
 
+	linkRepo := repository.NewLinkRepository(db)
+	clickRepo := repository.NewClickRepository(db)
+	linkSvc := service.NewLinkService(linkRepo, cfg.Shortener.CodeLength)
+	analyticsSvc := service.NewAnalyticsService(linkRepo, clickRepo)
+
 	e := router.New(router.Handlers{
-		Health: handler.NewHealthHandler(),
-		User:   handler.NewUserHandler(userSvc),
-	})
+		Health:   handler.NewHealthHandler(),
+		User:     handler.NewUserHandler(userSvc),
+		Link:     handler.NewLinkHandler(linkSvc, analyticsSvc, cfg.Shortener.BaseURL),
+		Redirect: handler.NewRedirectHandler(linkSvc, analyticsSvc),
+	}, cfg.Shortener.APIKeys)
 	e.Server.ReadTimeout = cfg.Server.ReadTimeout
 	e.Server.WriteTimeout = cfg.Server.WriteTimeout
 	e.Server.IdleTimeout = cfg.Server.IdleTimeout
