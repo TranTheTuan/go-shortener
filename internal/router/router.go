@@ -27,7 +27,7 @@ func New(h Handlers, apiKeys []string) *echo.Echo {
 	e.HidePort = true
 
 	e.Use(middleware.RequestID())
-	e.Use(middleware.Logger())
+	e.Use(middleware.RequestLogger())
 	e.Use(middleware.Recover())
 
 	registerRoutes(e, h, apiKeys)
