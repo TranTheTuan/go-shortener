@@ -1,0 +1,273 @@
+basePath: /
+definitions:
+  github_com_TranTheTuan_go-shortener_internal_repository.Click:
+    properties:
+      clicked_at:
+        type: string
+      id:
+        type: integer
+      ip_address:
+        type: string
+      link_id:
+        type: integer
+      referrer:
+        type: string
+      user_agent:
+        type: string
+    type: object
+  github_com_TranTheTuan_go-shortener_internal_repository.User:
+    properties:
+      created_at:
+        type: string
+      email:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_TranTheTuan_go-shortener_internal_service.LinkStats:
+    properties:
+      recent_clicks:
+        items:
+          $ref: '#/definitions/github_com_TranTheTuan_go-shortener_internal_repository.Click'
+        type: array
+      short_code:
+        type: string
+      total_clicks:
+        type: integer
+    type: object
+  github_com_TranTheTuan_go-shortener_pkg_response.Envelope:
+    properties:
+      data: {}
+      error:
+        $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.ErrorBody'
+    type: object
+  github_com_TranTheTuan_go-shortener_pkg_response.ErrorBody:
+    properties:
+      code:
+        type: string
+      message:
+        type: string
+    type: object
+  internal_handler.createLinkRequest:
+    properties:
+      expires_at:
+        type: string
+      url:
+        type: string
+    type: object
+  internal_handler.createLinkResponse:
+    properties:
+      expires_at:
+        type: string
+      original_url:
+        type: string
+      short_code:
+        type: string
+      short_url:
+        type: string
+    type: object
+  internal_handler.createUserRequest:
+    properties:
+      email:
+        type: string
+      name:
+        type: string
+    type: object
+info:
+  contact: {}
+  description: |-
+    URL shortener with click analytics, built on Echo + GORM + PostgreSQL.
+    All responses use a uniform envelope: success payloads under `data`, errors under `error`.
+  title: Go URL Shortener API
+  version: "1.0"
+paths:
+  /{code}:
+    get:
+      description: Resolves a short code and issues a 302 redirect. Records the click
+        asynchronously.
+      parameters:
+      - description: Short code
+        in: path
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "302":
+          description: redirect to the original URL
+        "404":
+          description: short link not found
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "410":
+          description: short link has expired
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      summary: Redirect to the original URL
+      tags:
+      - redirect
+  /api/links:
+    post:
+      consumes:
+      - application/json
+      description: Generates a random short code for the given URL. Optionally expires
+        at a future time.
+      parameters:
+      - description: API key
+        in: header
+        name: X-API-Key
+        required: true
+        type: string
+      - description: URL to shorten (expires_at optional, RFC 3339)
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.createLinkRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_handler.createLinkResponse'
+        "400":
+          description: invalid url or expiry
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "401":
+          description: missing or invalid API key
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      security:
+      - ApiKeyAuth: []
+      summary: Create a short link
+      tags:
+      - links
+  /api/links/{code}/stats:
+    get:
+      description: Returns the total click count and the most recent clicks for a
+        short link.
+      parameters:
+      - description: API key
+        in: header
+        name: X-API-Key
+        required: true
+        type: string
+      - description: Short code
+        in: path
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_internal_service.LinkStats'
+        "401":
+          description: missing or invalid API key
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "404":
+          description: short link not found
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      security:
+      - ApiKeyAuth: []
+      summary: Get click statistics
+      tags:
+      - links
+  /healthz:
+    get:
+      description: Liveness/readiness probe.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      summary: Health check
+      tags:
+      - health
+  /users:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_TranTheTuan_go-shortener_internal_repository.User'
+            type: array
+      summary: List users
+      tags:
+      - users
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: User to create
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.createUserRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_internal_repository.User'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "409":
+          description: email already exists
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      summary: Create a user
+      tags:
+      - users
+  /users/{id}:
+    get:
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_internal_repository.User'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      summary: Get a user by ID
+      tags:
+      - users
+securityDefinitions:
+  ApiKeyAuth:
+    in: header
+    name: X-API-Key
+    type: apiKey
+swagger: "2.0"

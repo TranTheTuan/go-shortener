@@ -1,0 +1,414 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "URL shortener with click analytics, built on Echo + GORM + PostgreSQL.\nAll responses use a uniform envelope: success payloads under `data`, errors under `error`.",
+        "title": "Go URL Shortener API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "basePath": "/",
+    "paths": {
+        "/api/links": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Generates a random short code for the given URL. Optionally expires at a future time.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "links"
+                ],
+                "summary": "Create a short link",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key",
+                        "name": "X-API-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "URL to shorten (expires_at optional, RFC 3339)",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.createLinkRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.createLinkResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid url or expiry",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    },
+                    "401": {
+                        "description": "missing or invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/links/{code}/stats": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Returns the total click count and the most recent clicks for a short link.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "links"
+                ],
+                "summary": "Get click statistics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API key",
+                        "name": "X-API-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Short code",
+                        "name": "code",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_internal_service.LinkStats"
+                        }
+                    },
+                    "401": {
+                        "description": "missing or invalid API key",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    },
+                    "404": {
+                        "description": "short link not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/healthz": {
+            "get": {
+                "description": "Liveness/readiness probe.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/users": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "List users",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_internal_repository.User"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Create a user",
+                "parameters": [
+                    {
+                        "description": "User to create",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.createUserRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_internal_repository.User"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    },
+                    "409": {
+                        "description": "email already exists",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{id}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "users"
+                ],
+                "summary": "Get a user by ID",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_internal_repository.User"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/{code}": {
+            "get": {
+                "description": "Resolves a short code and issues a 302 redirect. Records the click asynchronously.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "redirect"
+                ],
+                "summary": "Redirect to the original URL",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Short code",
+                        "name": "code",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "302": {
+                        "description": "redirect to the original URL"
+                    },
+                    "404": {
+                        "description": "short link not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    },
+                    "410": {
+                        "description": "short link has expired",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "github_com_TranTheTuan_go-shortener_internal_repository.Click": {
+            "type": "object",
+            "properties": {
+                "clicked_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "ip_address": {
+                    "type": "string"
+                },
+                "link_id": {
+                    "type": "integer"
+                },
+                "referrer": {
+                    "type": "string"
+                },
+                "user_agent": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_TranTheTuan_go-shortener_internal_repository.User": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_TranTheTuan_go-shortener_internal_service.LinkStats": {
+            "type": "object",
+            "properties": {
+                "recent_clicks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_internal_repository.Click"
+                    }
+                },
+                "short_code": {
+                    "type": "string"
+                },
+                "total_clicks": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_TranTheTuan_go-shortener_pkg_response.Envelope": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "error": {
+                    "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.ErrorBody"
+                }
+            }
+        },
+        "github_com_TranTheTuan_go-shortener_pkg_response.ErrorBody": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.createLinkRequest": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.createLinkResponse": {
+            "type": "object",
+            "properties": {
+                "expires_at": {
+                    "type": "string"
+                },
+                "original_url": {
+                    "type": "string"
+                },
+                "short_code": {
+                    "type": "string"
+                },
+                "short_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.createUserRequest": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "ApiKeyAuth": {
+            "type": "apiKey",
+            "name": "X-API-Key",
+            "in": "header"
+        }
+    }
+}

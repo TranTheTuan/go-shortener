@@ -28,6 +28,16 @@ type createUserRequest struct {
 }
 
 // Create handles POST /users.
+//
+// @Summary      Create a user
+// @Tags         users
+// @Accept       json
+// @Produce      json
+// @Param        request  body      createUserRequest  true  "User to create"
+// @Success      201      {object}  github_com_TranTheTuan_go-shortener_internal_repository.User
+// @Failure      400      {object}  response.Envelope
+// @Failure      409      {object}  response.Envelope  "email already exists"
+// @Router       /users [post]
 func (h *UserHandler) Create(c echo.Context) error {
 	var req createUserRequest
 	if err := c.Bind(&req); err != nil {
@@ -46,6 +56,15 @@ func (h *UserHandler) Create(c echo.Context) error {
 }
 
 // Get handles GET /users/:id.
+//
+// @Summary      Get a user by ID
+// @Tags         users
+// @Produce      json
+// @Param        id   path      int  true  "User ID"
+// @Success      200  {object}  github_com_TranTheTuan_go-shortener_internal_repository.User
+// @Failure      400  {object}  response.Envelope
+// @Failure      404  {object}  response.Envelope
+// @Router       /users/{id} [get]
 func (h *UserHandler) Get(c echo.Context) error {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -61,6 +80,12 @@ func (h *UserHandler) Get(c echo.Context) error {
 }
 
 // List handles GET /users.
+//
+// @Summary      List users
+// @Tags         users
+// @Produce      json
+// @Success      200  {array}   github_com_TranTheTuan_go-shortener_internal_repository.User
+// @Router       /users [get]
 func (h *UserHandler) List(c echo.Context) error {
 	users, err := h.users.ListUsers(c.Request().Context())
 	if err != nil {
