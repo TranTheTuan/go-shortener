@@ -5,7 +5,7 @@ export
 MIGRATIONS_PATH ?= migrations
 DB_URL := postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)
 
-.PHONY: help run build tidy test swag \
+.PHONY: help run build tidy test lint swag \
 	migrate-create migrate-up migrate-down migrate-force migrate-version
 
 help: ## Show this help.
@@ -23,6 +23,15 @@ tidy: ## Tidy module dependencies.
 
 test: ## Run the test suite.
 	go test ./...
+
+lint: ## Check formatting (gofmt) and run golangci-lint — mirrors CI exactly.
+	@unformatted=$$(gofmt -l .); \
+	if [ -n "$$unformatted" ]; then \
+		echo "These files are not gofmt-ed:"; \
+		echo "$$unformatted"; \
+		exit 1; \
+	fi
+	golangci-lint run
 
 swag: ## Regenerate the Swagger/OpenAPI docs into docs/swagger (requires swag CLI).
 	swag init -g cmd/server/main.go -o docs/swagger --parseDependency --parseInternal
