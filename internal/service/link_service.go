@@ -12,11 +12,7 @@ import (
 	"github.com/TranTheTuan/go-shortener/pkg/shortcode"
 )
 
-// maxCodeGenAttempts bounds the collision-retry loop when generating a unique
-// short code.
 const maxCodeGenAttempts = 5
-
-// defaultCodeLength is used when the configured length is non-positive.
 const defaultCodeLength = 7
 
 // CreateLinkInput carries the data required to create a short link.
@@ -31,28 +27,30 @@ type LinkService interface {
 	Resolve(ctx context.Context, code string) (*repository.Link, error)
 }
 
-// linkService is the default LinkService backed by a LinkRepository.
 type linkService struct {
-	repo    repository.LinkRepository
-	codeLen int
-	now     func() time.Time
+	repo     repository.LinkRepository
+	cache    repository.LinkCacheRepository // nil = caching disabled
+	codeLen  int
+	cacheTTL time.Duration
+	now      func() time.Time
 }
 
-// NewLinkService wires a LinkService to its repository. codeLen <= 0 falls back
-// to the default length.
-func NewLinkService(repo repository.LinkRepository, codeLen int) LinkService {
+// NewLinkService wires a LinkService to its repository and optional cache.
+// codeLen <= 0 falls back to defaultCodeLength. cache may be nil.
+func NewLinkService(
+	repo repository.LinkRepository,
+	cache repository.LinkCacheRepository,
+	codeLen int,
+	cacheTTL time.Duration,
+) LinkService {
 	if codeLen <= 0 {
 		codeLen = defaultCodeLength
 	}
-	return &linkService{
-		repo:    repo,
-		codeLen: codeLen,
-		now:     time.Now,
-	}
+	return &linkService{repo: repo, cache: cache, codeLen: codeLen, cacheTTL: cacheTTL, now: time.Now}
 }
 
-// Create validates the input, generates a unique short code (retrying on
-// collision), and persists the link.
+// Create validates the input, deduplicates against existing links, generates a
+// unique short code (retrying on collision), persists the link, and warms the cache.
 func (s *linkService) Create(ctx context.Context, in CreateLinkInput) (*repository.Link, error) {
 	target := strings.TrimSpace(in.URL)
 	if err := validateURL(target); err != nil {
@@ -64,35 +62,49 @@ func (s *linkService) Create(ctx context.Context, in CreateLinkInput) (*reposito
 		return nil, apperror.BadRequest("expires_at must be in the future")
 	}
 
+	// Dedup: reuse an existing non-expired link for the same URL.
+	existing, err := s.repo.GetByOriginalURL(ctx, target)
+	if err == nil {
+		notExpired := existing.ExpiresAt == nil || existing.ExpiresAt.After(now)
+		if notExpired {
+			s.cacheSet(ctx, existing)
+			return existing, nil
+		}
+	}
+	// ErrNotFound or expired link → fall through to create new.
+
 	for attempt := 0; attempt < maxCodeGenAttempts; attempt++ {
 		code, err := shortcode.Generate(s.codeLen)
 		if err != nil {
 			return nil, apperror.Internal(err)
 		}
-
 		link := &repository.Link{
 			ShortCode:   code,
 			OriginalURL: target,
 			ExpiresAt:   in.ExpiresAt,
 			CreatedAt:   now,
 		}
-
 		created, err := s.repo.Create(ctx, link)
 		if errors.Is(err, repository.ErrConflict) {
-			continue // collision — try a fresh code
+			continue
 		}
 		if err != nil {
 			return nil, apperror.Internal(err)
 		}
+		s.cacheSet(ctx, created)
 		return created, nil
 	}
 
 	return nil, apperror.Internal(errors.New("could not generate a unique short code"))
 }
 
-// Resolve returns the link for a code, mapping not-found and expired states to
-// application errors.
+// Resolve returns the link for a code using a cache-first strategy.
+// On cache miss it queries the DB, checks expiry, and backfills the cache.
 func (s *linkService) Resolve(ctx context.Context, code string) (*repository.Link, error) {
+	if cached := s.cacheGet(ctx, code); cached != nil {
+		return cached, nil
+	}
+
 	link, err := s.repo.GetByCode(ctx, code)
 	if errors.Is(err, repository.ErrNotFound) {
 		return nil, apperror.NotFound("short link not found")
@@ -100,11 +112,49 @@ func (s *linkService) Resolve(ctx context.Context, code string) (*repository.Lin
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}
-
 	if link.ExpiresAt != nil && link.ExpiresAt.Before(s.now().UTC()) {
 		return nil, apperror.Gone("short link has expired")
 	}
+
+	s.cacheSet(ctx, link)
 	return link, nil
+}
+
+// cacheTTLFor computes the Redis TTL for a link.
+// Links with ExpiresAt use the remaining duration; others use the configured default.
+func (s *linkService) cacheTTLFor(link *repository.Link) time.Duration {
+	if link.ExpiresAt != nil {
+		ttl := time.Until(*link.ExpiresAt)
+		if ttl <= 0 {
+			return 0
+		}
+		return ttl
+	}
+	return s.cacheTTL
+}
+
+// cacheSet is fire-and-forget: a cache write failure never blocks the main flow.
+func (s *linkService) cacheSet(ctx context.Context, link *repository.Link) {
+	if s.cache == nil {
+		return
+	}
+	ttl := s.cacheTTLFor(link)
+	if ttl <= 0 {
+		return
+	}
+	_ = s.cache.Set(ctx, link, ttl)
+}
+
+// cacheGet returns the cached Link (with ID populated) or nil on any miss or error.
+func (s *linkService) cacheGet(ctx context.Context, code string) *repository.Link {
+	if s.cache == nil {
+		return nil
+	}
+	link, err := s.cache.Get(ctx, code)
+	if err != nil {
+		return nil
+	}
+	return link
 }
 
 // validateURL ensures the target is a well-formed absolute http(s) URL.

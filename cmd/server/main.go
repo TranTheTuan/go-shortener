@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	_ "net/http/pprof" // registers pprof handlers on http.DefaultServeMux
 	"os"
 	"os/signal"
 	"syscall"
@@ -55,13 +56,28 @@ func run() error {
 		return err
 	}
 
+	rdb, err := database.SetupRedis(cfg.Redis)
+	if err != nil {
+		return err
+	}
+
+	if cfg.Server.PprofAddr != "" {
+		go func() {
+			slog.Info("pprof server starting", "addr", cfg.Server.PprofAddr)
+			if err := http.ListenAndServe(cfg.Server.PprofAddr, nil); err != nil {
+				slog.Error("pprof server failed", "error", err)
+			}
+		}()
+	}
+
 	// Wire dependencies: repository -> service -> handler.
 	userRepo := repository.NewUserRepository(db)
 	userSvc := service.NewUserService(userRepo)
 
 	linkRepo := repository.NewLinkRepository(db)
 	clickRepo := repository.NewClickRepository(db)
-	linkSvc := service.NewLinkService(linkRepo, cfg.Shortener.CodeLength)
+	linkCacheRepo := repository.NewLinkCacheRepository(rdb)
+	linkSvc := service.NewLinkService(linkRepo, linkCacheRepo, cfg.Shortener.CodeLength, cfg.Shortener.CacheTTL)
 	analyticsSvc := service.NewAnalyticsService(linkRepo, clickRepo)
 
 	e := router.New(router.Handlers{

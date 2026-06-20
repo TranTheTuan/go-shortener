@@ -22,6 +22,7 @@ type Link struct {
 type LinkRepository interface {
 	Create(ctx context.Context, link *Link) (*Link, error)
 	GetByCode(ctx context.Context, code string) (*Link, error)
+	GetByOriginalURL(ctx context.Context, url string) (*Link, error)
 }
 
 // linkRepository is the GORM-backed LinkRepository.
@@ -50,6 +51,18 @@ func (r *linkRepository) Create(ctx context.Context, link *Link) (*Link, error) 
 func (r *linkRepository) GetByCode(ctx context.Context, code string) (*Link, error) {
 	var link Link
 	if err := r.db.WithContext(ctx).Where("short_code = ?", code).First(&link).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &link, nil
+}
+
+// GetByOriginalURL returns the link for the given original URL or ErrNotFound.
+func (r *linkRepository) GetByOriginalURL(ctx context.Context, url string) (*Link, error) {
+	var link Link
+	if err := r.db.WithContext(ctx).Where("original_url = ?", url).First(&link).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
 		}

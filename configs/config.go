@@ -17,6 +17,7 @@ type Config struct {
 	Server    ServerConfig    `envPrefix:"SERVER_"`
 	Database  DatabaseConfig  `envPrefix:"DB_"`
 	Shortener ShortenerConfig `envPrefix:"SHORTENER_"`
+	Redis     RedisConfig     `envPrefix:"REDIS_"`
 }
 
 // ShortenerConfig holds URL-shortener settings.
@@ -28,6 +29,8 @@ type ShortenerConfig struct {
 	APIKeys []string `env:"API_KEYS" envSeparator:","`
 	// CodeLength is the number of base62 characters in generated short codes.
 	CodeLength int `env:"CODE_LENGTH" envDefault:"7"`
+	// CacheTTL is the default Redis TTL for links without an expiry date.
+	CacheTTL time.Duration `env:"CACHE_TTL" envDefault:"24h"`
 }
 
 // ServerConfig holds the HTTP server settings.
@@ -38,6 +41,8 @@ type ServerConfig struct {
 	WriteTimeout    time.Duration `env:"WRITE_TIMEOUT" envDefault:"10s"`
 	IdleTimeout     time.Duration `env:"IDLE_TIMEOUT" envDefault:"120s"`
 	ShutdownTimeout time.Duration `env:"SHUTDOWN_TIMEOUT" envDefault:"10s"`
+	// PprofAddr is the address for the pprof debug server. Empty string disables it.
+	PprofAddr string `env:"PPROF_ADDR" envDefault:"localhost:6060"`
 }
 
 // Addr returns the address the HTTP server should listen on.
