@@ -27,6 +27,8 @@ definitions:
         type: string
       updated_at:
         type: string
+      username:
+        type: string
     type: object
   github_com_TranTheTuan_go-shortener_internal_service.LinkStats:
     properties:
@@ -38,6 +40,18 @@ definitions:
         type: string
       total_clicks:
         type: integer
+    type: object
+  github_com_TranTheTuan_go-shortener_internal_service.TokenPair:
+    properties:
+      access_token:
+        type: string
+      expires_in:
+        description: access-token lifetime in seconds
+        type: integer
+      refresh_token:
+        type: string
+      token_type:
+        type: string
     type: object
   github_com_TranTheTuan_go-shortener_pkg_response.Envelope:
     properties:
@@ -70,11 +84,27 @@ definitions:
       short_url:
         type: string
     type: object
-  internal_handler.createUserRequest:
+  internal_handler.loginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    type: object
+  internal_handler.refreshRequest:
+    properties:
+      refresh_token:
+        type: string
+    type: object
+  internal_handler.registerRequest:
     properties:
       email:
         type: string
       name:
+        type: string
+      password:
+        type: string
+      username:
         type: string
     type: object
 info:
@@ -184,6 +214,132 @@ paths:
       summary: Get click statistics
       tags:
       - links
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Email and password
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.loginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_internal_service.TokenPair'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "401":
+          description: invalid credentials
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      summary: Log in with email and password
+      tags:
+      - auth
+  /auth/logout:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Refresh token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.refreshRequest'
+      responses:
+        "204":
+          description: no content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      summary: Revoke a refresh token
+      tags:
+      - auth
+  /auth/me:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_internal_repository.User'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Get the authenticated user
+      tags:
+      - auth
+  /auth/refresh:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Refresh token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.refreshRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_internal_service.TokenPair'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "401":
+          description: invalid or expired token
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      summary: Exchange a refresh token for a new token pair
+      tags:
+      - auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.registerRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_internal_repository.User'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "409":
+          description: username or email taken
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      summary: Register a new user
+      tags:
+      - auth
   /healthz:
     get:
       description: Liveness/readiness probe.
@@ -209,34 +365,6 @@ paths:
               $ref: '#/definitions/github_com_TranTheTuan_go-shortener_internal_repository.User'
             type: array
       summary: List users
-      tags:
-      - users
-    post:
-      consumes:
-      - application/json
-      parameters:
-      - description: User to create
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_handler.createUserRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_internal_repository.User'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
-        "409":
-          description: email already exists
-          schema:
-            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
-      summary: Create a user
       tags:
       - users
   /users/{id}:
@@ -269,5 +397,10 @@ securityDefinitions:
   ApiKeyAuth:
     in: header
     name: X-API-Key
+    type: apiKey
+  BearerAuth:
+    description: 'Bearer access token. Format: "Bearer {token}".'
+    in: header
+    name: Authorization
     type: apiKey
 swagger: "2.0"
