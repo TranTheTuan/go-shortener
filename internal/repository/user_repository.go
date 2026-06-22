@@ -19,19 +19,23 @@ var ErrNotFound = errors.New("repository: not found")
 var ErrConflict = errors.New("repository: conflict")
 
 // User is the domain entity persisted by UserRepository. GORM tags define the
-// table schema used by AutoMigrate.
+// table schema; the matching SQL lives in migrations/000001 and 000004.
 type User struct {
-	ID        int64     `gorm:"primaryKey" json:"id"`
-	Name      string    `gorm:"size:255;not null" json:"name"`
-	Email     string    `gorm:"size:255;uniqueIndex;not null" json:"email"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID           int64     `gorm:"primaryKey" json:"id"`
+	Username     string    `gorm:"size:255;uniqueIndex;not null" json:"username"`
+	Email        string    `gorm:"size:255;uniqueIndex;not null" json:"email"`
+	PasswordHash string    `gorm:"size:255;not null" json:"-"` // never serialized to clients
+	Name         *string   `gorm:"size:255" json:"name,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // UserRepository defines the persistence operations for users.
 type UserRepository interface {
 	Create(ctx context.Context, user *User) (*User, error)
 	GetByID(ctx context.Context, id int64) (*User, error)
+	GetByEmail(ctx context.Context, email string) (*User, error)
+	GetByUsername(ctx context.Context, username string) (*User, error)
 	List(ctx context.Context) ([]*User, error)
 }
 
@@ -60,6 +64,30 @@ func (r *userRepository) Create(ctx context.Context, user *User) (*User, error) 
 func (r *userRepository) GetByID(ctx context.Context, id int64) (*User, error) {
 	var user User
 	if err := r.db.WithContext(ctx).First(&user, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &user, nil
+}
+
+// GetByEmail returns the user with the given email or ErrNotFound.
+func (r *userRepository) GetByEmail(ctx context.Context, email string) (*User, error) {
+	var user User
+	if err := r.db.WithContext(ctx).Where("email = ?", email).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &user, nil
+}
+
+// GetByUsername returns the user with the given username or ErrNotFound.
+func (r *userRepository) GetByUsername(ctx context.Context, username string) (*User, error) {
+	var user User
+	if err := r.db.WithContext(ctx).Where("username = ?", username).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
 		}
