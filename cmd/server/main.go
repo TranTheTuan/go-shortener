@@ -19,6 +19,7 @@ import (
 	"github.com/TranTheTuan/go-shortener/internal/router"
 	"github.com/TranTheTuan/go-shortener/internal/service"
 	"github.com/TranTheTuan/go-shortener/pkg/database"
+	"github.com/TranTheTuan/go-shortener/pkg/token"
 )
 
 // @title                      Go URL Shortener API
@@ -29,6 +30,10 @@ import (
 // @securityDefinitions.apikey ApiKeyAuth
 // @in                         header
 // @name                       X-API-Key
+// @securityDefinitions.apikey BearerAuth
+// @in                         header
+// @name                       Authorization
+// @description                Bearer access token. Format: "Bearer {token}".
 func main() {
 	if err := run(); err != nil {
 		slog.Error("server exited with error", "error", err)
@@ -80,12 +85,17 @@ func run() error {
 	linkSvc := service.NewLinkService(linkRepo, linkCacheRepo, cfg.Shortener.CodeLength, cfg.Shortener.CacheTTL)
 	analyticsSvc := service.NewAnalyticsService(linkRepo, clickRepo)
 
+	issuer := token.NewIssuer(cfg.Auth.JWTSecret, cfg.Auth.AccessTTL)
+	refreshRepo := repository.NewRefreshTokenRepository(db)
+	authSvc := service.NewAuthService(userRepo, refreshRepo, issuer, cfg.Auth.RefreshTTL, cfg.Auth.BcryptCost)
+
 	e := router.New(router.Handlers{
 		Health:   handler.NewHealthHandler(),
 		User:     handler.NewUserHandler(userSvc),
 		Link:     handler.NewLinkHandler(linkSvc, analyticsSvc, cfg.Shortener.BaseURL),
 		Redirect: handler.NewRedirectHandler(linkSvc, analyticsSvc),
-	}, cfg.Shortener.APIKeys)
+		Auth:     handler.NewAuthHandler(authSvc, userSvc),
+	}, cfg.Shortener.APIKeys, issuer)
 	e.Server.ReadTimeout = cfg.Server.ReadTimeout
 	e.Server.WriteTimeout = cfg.Server.WriteTimeout
 	e.Server.IdleTimeout = cfg.Server.IdleTimeout

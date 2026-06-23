@@ -57,6 +57,99 @@ func (m *mockLinkCacheRepository) Get(_ context.Context, code string) (*reposito
 	return link, nil
 }
 
+// mockUserRepo is an in-memory test double for repository.UserRepository. It
+// enforces unique username/email so Create can surface repository.ErrConflict.
+type mockUserRepo struct {
+	users  map[int64]*repository.User
+	nextID int64
+}
+
+func newMockUserRepo() *mockUserRepo {
+	return &mockUserRepo{users: make(map[int64]*repository.User)}
+}
+
+func (m *mockUserRepo) Create(_ context.Context, user *repository.User) (*repository.User, error) {
+	for _, u := range m.users {
+		if u.Username == user.Username || u.Email == user.Email {
+			return nil, repository.ErrConflict
+		}
+	}
+	m.nextID++
+	user.ID = m.nextID
+	m.users[user.ID] = user
+	return user, nil
+}
+
+func (m *mockUserRepo) GetByID(_ context.Context, id int64) (*repository.User, error) {
+	if u, ok := m.users[id]; ok {
+		return u, nil
+	}
+	return nil, repository.ErrNotFound
+}
+
+func (m *mockUserRepo) GetByEmail(_ context.Context, email string) (*repository.User, error) {
+	for _, u := range m.users {
+		if u.Email == email {
+			return u, nil
+		}
+	}
+	return nil, repository.ErrNotFound
+}
+
+func (m *mockUserRepo) GetByUsername(_ context.Context, username string) (*repository.User, error) {
+	for _, u := range m.users {
+		if u.Username == username {
+			return u, nil
+		}
+	}
+	return nil, repository.ErrNotFound
+}
+
+func (m *mockUserRepo) List(_ context.Context) ([]*repository.User, error) {
+	out := make([]*repository.User, 0, len(m.users))
+	for _, u := range m.users {
+		out = append(out, u)
+	}
+	return out, nil
+}
+
+// mockRefreshRepo is an in-memory test double for repository.RefreshTokenRepository.
+type mockRefreshRepo struct {
+	byID   map[int64]*repository.RefreshToken
+	byHash map[string]*repository.RefreshToken
+	nextID int64
+}
+
+func newMockRefreshRepo() *mockRefreshRepo {
+	return &mockRefreshRepo{
+		byID:   make(map[int64]*repository.RefreshToken),
+		byHash: make(map[string]*repository.RefreshToken),
+	}
+}
+
+func (m *mockRefreshRepo) Create(_ context.Context, rt *repository.RefreshToken) (*repository.RefreshToken, error) {
+	m.nextID++
+	rt.ID = m.nextID
+	m.byID[rt.ID] = rt
+	m.byHash[rt.TokenHash] = rt
+	return rt, nil
+}
+
+func (m *mockRefreshRepo) GetByHash(_ context.Context, hash string) (*repository.RefreshToken, error) {
+	if rt, ok := m.byHash[hash]; ok {
+		return rt, nil
+	}
+	return nil, repository.ErrNotFound
+}
+
+func (m *mockRefreshRepo) Revoke(_ context.Context, id int64) error {
+	if rt, ok := m.byID[id]; ok {
+		now := time.Now().UTC()
+		rt.RevokedAt = &now
+	}
+	return nil
+}
+
 // mockClickRepo is a configurable test double for repository.ClickRepository.
 type mockClickRepo struct {
 	createFn        func(ctx context.Context, click *repository.Click) error

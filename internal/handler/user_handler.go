@@ -21,40 +21,6 @@ func NewUserHandler(users service.UserService) *UserHandler {
 	return &UserHandler{users: users}
 }
 
-// createUserRequest is the expected body for POST /users.
-type createUserRequest struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
-}
-
-// Create handles POST /users.
-//
-// @Summary      Create a user
-// @Tags         users
-// @Accept       json
-// @Produce      json
-// @Param        request  body      createUserRequest  true  "User to create"
-// @Success      201      {object}  github_com_TranTheTuan_go-shortener_internal_repository.User
-// @Failure      400      {object}  response.Envelope
-// @Failure      409      {object}  response.Envelope  "email already exists"
-// @Router       /users [post]
-func (h *UserHandler) Create(c echo.Context) error {
-	var req createUserRequest
-	if err := c.Bind(&req); err != nil {
-		return response.Error(c, apperror.BadRequest("invalid request body"))
-	}
-
-	user, err := h.users.CreateUser(c.Request().Context(), service.CreateUserInput{
-		Name:  req.Name,
-		Email: req.Email,
-	})
-	if err != nil {
-		return response.Error(c, err)
-	}
-
-	return response.Success(c, http.StatusCreated, user)
-}
-
 // Get handles GET /users/:id.
 //
 // @Summary      Get a user by ID

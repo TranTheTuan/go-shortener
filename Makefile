@@ -22,7 +22,7 @@ tidy: ## Tidy module dependencies.
 	go mod tidy
 
 test: ## Run the test suite.
-	go test ./...
+	go test -race -covermode=atomic ./...
 
 lint: ## Check formatting (gofmt) and run golangci-lint — mirrors CI exactly.
 	@unformatted=$$(gofmt -l .); \

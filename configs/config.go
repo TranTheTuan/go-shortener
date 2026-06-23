@@ -4,11 +4,16 @@
 package configs
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/caarlos0/env/v10"
 )
+
+// defaultDevJWTSecret is the placeholder signing secret. It is accepted only in
+// the development environment; any other environment must override it.
+const defaultDevJWTSecret = "dev-insecure-change-me"
 
 // Config is the top-level configuration container. Nested sections are given
 // an envPrefix so their variables are namespaced (e.g. DB_HOST, SERVER_PORT).
@@ -18,6 +23,20 @@ type Config struct {
 	Database  DatabaseConfig  `envPrefix:"DB_"`
 	Shortener ShortenerConfig `envPrefix:"SHORTENER_"`
 	Redis     RedisConfig     `envPrefix:"REDIS_"`
+	Auth      AuthConfig      `envPrefix:"AUTH_"`
+}
+
+// AuthConfig holds authentication settings.
+type AuthConfig struct {
+	// JWTSecret signs access tokens (HS256). The development default is rejected
+	// in any other environment (fail-closed).
+	JWTSecret string `env:"JWT_SECRET" envDefault:"dev-insecure-change-me"`
+	// AccessTTL is the lifetime of an access token.
+	AccessTTL time.Duration `env:"ACCESS_TTL" envDefault:"15m"`
+	// RefreshTTL is the lifetime of a refresh token.
+	RefreshTTL time.Duration `env:"REFRESH_TTL" envDefault:"168h"`
+	// BcryptCost is the bcrypt work factor for password hashing.
+	BcryptCost int `env:"BCRYPT_COST" envDefault:"12"`
 }
 
 // ShortenerConfig holds URL-shortener settings.
@@ -80,5 +99,18 @@ func Load() (Config, error) {
 	if err := env.Parse(&cfg); err != nil {
 		return Config{}, fmt.Errorf("config: parse environment: %w", err)
 	}
+	if err := cfg.validate(); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
+}
+
+// validate enforces invariants that struct-tag defaults cannot express.
+func (c Config) validate() error {
+	// Fail closed: outside development the JWT secret must be set to a real value.
+	if c.Env != "development" &&
+		(c.Auth.JWTSecret == "" || c.Auth.JWTSecret == defaultDevJWTSecret) {
+		return errors.New("config: AUTH_JWT_SECRET must be set to a non-default value outside development")
+	}
+	return nil
 }
