@@ -148,11 +148,6 @@ paths:
       description: Generates a random short code for the given URL. Optionally expires
         at a future time.
       parameters:
-      - description: API key
-        in: header
-        name: X-API-Key
-        required: true
-        type: string
       - description: URL to shorten (expires_at optional, RFC 3339)
         in: body
         name: request
@@ -171,10 +166,15 @@ paths:
           schema:
             $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
         "401":
-          description: missing or invalid API key
+          description: missing or invalid credentials
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "429":
+          description: daily link quota exceeded
           schema:
             $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
       security:
+      - BearerAuth: []
       - ApiKeyAuth: []
       summary: Create a short link
       tags:

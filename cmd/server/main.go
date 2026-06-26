@@ -19,6 +19,7 @@ import (
 	"github.com/TranTheTuan/go-shortener/internal/router"
 	"github.com/TranTheTuan/go-shortener/internal/service"
 	"github.com/TranTheTuan/go-shortener/pkg/database"
+	"github.com/TranTheTuan/go-shortener/pkg/redisbreaker"
 	"github.com/TranTheTuan/go-shortener/pkg/token"
 )
 
@@ -89,13 +90,25 @@ func run() error {
 	refreshRepo := repository.NewRefreshTokenRepository(db)
 	authSvc := service.NewAuthService(userRepo, refreshRepo, issuer, cfg.Auth.RefreshTTL, cfg.Auth.BcryptCost)
 
+	// Quota + per-owner dedup: Redis access guarded by a circuit breaker.
+	breaker := redisbreaker.New(cfg.Quota.BreakerMaxFailures, cfg.Quota.BreakerOpenTimeout)
+	dedupCache := service.NewDedupCache(rdb, breaker, cfg.Shortener.CacheTTL)
+	planRepo := repository.NewPlanRepository(db)
+	subRepo := repository.NewSubscriptionRepository(db)
+	quotaSvc := service.NewQuotaService(rdb, breaker, planRepo, subRepo, cfg.Quota.DefaultPlanCode, cfg.Quota.BasicFallbackLimit)
+
 	e := router.New(router.Handlers{
 		Health:   handler.NewHealthHandler(),
 		User:     handler.NewUserHandler(userSvc),
-		Link:     handler.NewLinkHandler(linkSvc, analyticsSvc, cfg.Shortener.BaseURL),
+		Link:     handler.NewLinkHandler(linkSvc, analyticsSvc, dedupCache, cfg.Shortener.BaseURL),
 		Redirect: handler.NewRedirectHandler(linkSvc, analyticsSvc),
 		Auth:     handler.NewAuthHandler(authSvc, userSvc),
-	}, cfg.Shortener.APIKeys, issuer)
+	}, router.Deps{
+		Issuer:  issuer,
+		APIKeys: cfg.Shortener.APIKeys,
+		Dedup:   dedupCache,
+		Quota:   quotaSvc,
+	})
 	e.Server.ReadTimeout = cfg.Server.ReadTimeout
 	e.Server.WriteTimeout = cfg.Server.WriteTimeout
 	e.Server.IdleTimeout = cfg.Server.IdleTimeout

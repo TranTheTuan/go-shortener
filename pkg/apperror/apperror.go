@@ -73,6 +73,11 @@ func Gone(message string) *Error {
 	return New(http.StatusGone, "GONE", message)
 }
 
+// TooManyRequests reports that a rate or quota limit has been hit (HTTP 429).
+func TooManyRequests(message string) *Error {
+	return New(http.StatusTooManyRequests, "QUOTA_EXCEEDED", message)
+}
+
 // Internal reports an unexpected server-side failure (HTTP 500). The cause is
 // wrapped for logging but never shown to clients.
 func Internal(err error) *Error {

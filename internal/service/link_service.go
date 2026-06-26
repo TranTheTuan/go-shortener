@@ -19,11 +19,19 @@ const defaultCodeLength = 7
 type CreateLinkInput struct {
 	URL       string
 	ExpiresAt *time.Time
+	// OwnerID is the authenticated creator (nil for API-key/unowned creation).
+	OwnerID *int64
+	// QuotaExhausted is set by the quota middleware when the owner is over their
+	// daily limit. A reused (deduped) link is still returned, but creating a NEW
+	// link is rejected — so reuse never counts against quota.
+	QuotaExhausted bool
 }
 
 // LinkService defines the business operations for short links.
 type LinkService interface {
-	Create(ctx context.Context, in CreateLinkInput) (*repository.Link, error)
+	// Create returns the link plus whether it reused an existing one (dedup hit)
+	// rather than creating a new row — the quota layer uses this to refund.
+	Create(ctx context.Context, in CreateLinkInput) (*repository.Link, bool, error)
 	Resolve(ctx context.Context, code string) (*repository.Link, error)
 }
 
@@ -51,36 +59,42 @@ func NewLinkService(
 
 // Create validates the input, deduplicates against existing links, generates a
 // unique short code (retrying on collision), persists the link, and warms the cache.
-func (s *linkService) Create(ctx context.Context, in CreateLinkInput) (*repository.Link, error) {
+func (s *linkService) Create(ctx context.Context, in CreateLinkInput) (*repository.Link, bool, error) {
 	target := strings.TrimSpace(in.URL)
 	if err := validateURL(target); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	now := s.now().UTC()
 	if in.ExpiresAt != nil && !in.ExpiresAt.After(now) {
-		return nil, apperror.BadRequest("expires_at must be in the future")
+		return nil, false, apperror.BadRequest("expires_at must be in the future")
 	}
 
-	// Dedup: reuse an existing non-expired link for the same URL.
-	existing, err := s.repo.GetByOriginalURL(ctx, target)
+	// Dedup: reuse this owner's existing non-expired link for the same URL.
+	existing, err := s.repo.GetByOwnerAndURL(ctx, in.OwnerID, target)
 	if err == nil {
 		notExpired := existing.ExpiresAt == nil || existing.ExpiresAt.After(now)
 		if notExpired {
 			s.cacheSet(ctx, existing)
-			return existing, nil
+			return existing, true, nil // reused
 		}
 	}
 	// ErrNotFound or expired link → fall through to create new.
 
+	// No existing link to reuse: a new link would be created, so enforce quota.
+	if in.QuotaExhausted {
+		return nil, false, apperror.TooManyRequests("daily link quota exceeded")
+	}
+
 	for attempt := 0; attempt < maxCodeGenAttempts; attempt++ {
 		code, err := shortcode.Generate(s.codeLen)
 		if err != nil {
-			return nil, apperror.Internal(err)
+			return nil, false, apperror.Internal(err)
 		}
 		link := &repository.Link{
 			ShortCode:   code,
 			OriginalURL: target,
+			UserID:      in.OwnerID,
 			ExpiresAt:   in.ExpiresAt,
 			CreatedAt:   now,
 		}
@@ -89,13 +103,13 @@ func (s *linkService) Create(ctx context.Context, in CreateLinkInput) (*reposito
 			continue
 		}
 		if err != nil {
-			return nil, apperror.Internal(err)
+			return nil, false, apperror.Internal(err)
 		}
 		s.cacheSet(ctx, created)
-		return created, nil
+		return created, false, nil
 	}
 
-	return nil, apperror.Internal(errors.New("could not generate a unique short code"))
+	return nil, false, apperror.Internal(errors.New("could not generate a unique short code"))
 }
 
 // Resolve returns the link for a code using a cache-first strategy.

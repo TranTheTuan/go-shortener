@@ -3,11 +3,13 @@ module github.com/TranTheTuan/go-shortener
 go 1.26
 
 require (
+	github.com/alicebob/miniredis/v2 v2.38.0
 	github.com/caarlos0/env/v10 v10.0.0
 	github.com/goccy/go-json v0.10.6
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/labstack/echo/v4 v4.15.4
 	github.com/redis/go-redis/v9 v9.20.1
+	github.com/sony/gobreaker v1.0.0
 	github.com/swaggo/echo-swagger v1.5.2
 	github.com/swaggo/swag v1.16.2
 	golang.org/x/crypto v0.53.0
@@ -40,6 +42,7 @@ require (
 	github.com/swaggo/swag/v2 v2.0.0-rc4 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
+	github.com/yuin/gopher-lua v1.1.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect

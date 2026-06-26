@@ -14,6 +14,7 @@ type Link struct {
 	ID          int64      `gorm:"primaryKey" json:"id"`
 	ShortCode   string     `gorm:"size:16;uniqueIndex;not null" json:"short_code"`
 	OriginalURL string     `gorm:"not null" json:"original_url"`
+	UserID      *int64     `gorm:"index" json:"user_id,omitempty"` // nil = created via API key (unowned)
 	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 }
@@ -22,7 +23,9 @@ type Link struct {
 type LinkRepository interface {
 	Create(ctx context.Context, link *Link) (*Link, error)
 	GetByCode(ctx context.Context, code string) (*Link, error)
-	GetByOriginalURL(ctx context.Context, url string) (*Link, error)
+	// GetByOwnerAndURL finds a link for the given URL scoped to one owner.
+	// ownerID nil matches the unowned (API-key) group.
+	GetByOwnerAndURL(ctx context.Context, ownerID *int64, url string) (*Link, error)
 }
 
 // linkRepository is the GORM-backed LinkRepository.
@@ -59,10 +62,18 @@ func (r *linkRepository) GetByCode(ctx context.Context, code string) (*Link, err
 	return &link, nil
 }
 
-// GetByOriginalURL returns the link for the given original URL or ErrNotFound.
-func (r *linkRepository) GetByOriginalURL(ctx context.Context, url string) (*Link, error) {
+// GetByOwnerAndURL returns the owner's link for the given original URL, or
+// ErrNotFound. A nil ownerID matches the unowned (API-key) group.
+func (r *linkRepository) GetByOwnerAndURL(ctx context.Context, ownerID *int64, url string) (*Link, error) {
+	q := r.db.WithContext(ctx)
+	if ownerID == nil {
+		q = q.Where("user_id IS NULL")
+	} else {
+		q = q.Where("user_id = ?", *ownerID)
+	}
+
 	var link Link
-	if err := r.db.WithContext(ctx).Where("original_url = ?", url).First(&link).Error; err != nil {
+	if err := q.Where("original_url = ?", url).First(&link).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
 		}
