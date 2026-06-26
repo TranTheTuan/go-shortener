@@ -25,6 +25,15 @@ var usernamePattern = regexp.MustCompile(`^[a-zA-Z0-9_]{3,50}$`)
 // minPasswordLen is the minimum accepted password length.
 const minPasswordLen = 8
 
+// maxPasswordLen caps password length. bcrypt silently truncates input beyond
+// 72 bytes, and unbounded input invites a hashing-CPU DoS, so reject longer.
+const maxPasswordLen = 72
+
+// dummyHash is a precomputed bcrypt hash compared against on a login miss so an
+// unknown email costs the same time as a real one (defeats timing enumeration).
+// Value is the hash of a random string; it never matches a real password.
+var dummyHash = []byte("$2a$12$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy")
+
 // errInvalidCredentials is the single, generic auth failure (no user enumeration).
 var errInvalidCredentials = apperror.New(http.StatusUnauthorized, "UNAUTHORIZED", "invalid email or password")
 
@@ -100,6 +109,9 @@ func (s *authService) Register(ctx context.Context, in RegisterInput) (*reposito
 	if len(in.Password) < minPasswordLen {
 		return nil, apperror.BadRequest("password must be at least 8 characters")
 	}
+	if len(in.Password) > maxPasswordLen {
+		return nil, apperror.BadRequest("password must be at most 72 characters")
+	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), s.bcryptCost)
 	if err != nil {
@@ -127,14 +139,18 @@ func (s *authService) Register(ctx context.Context, in RegisterInput) (*reposito
 // Login authenticates by email + password and issues a token pair.
 func (s *authService) Login(ctx context.Context, in LoginInput) (*TokenPair, error) {
 	user, err := s.users.GetByEmail(ctx, strings.TrimSpace(in.Email))
-	if errors.Is(err, repository.ErrNotFound) {
-		return nil, errInvalidCredentials
-	}
-	if err != nil {
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
 		return nil, apperror.Internal(err)
 	}
 
-	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(in.Password)) != nil {
+	// Constant-time path: always run a bcrypt comparison so an unknown email
+	// costs the same as a real one (no timing-based user enumeration). On a
+	// miss we compare against a fixed dummy hash that can never match.
+	hash := dummyHash
+	if user != nil {
+		hash = []byte(user.PasswordHash)
+	}
+	if bcrypt.CompareHashAndPassword(hash, []byte(in.Password)) != nil || user == nil {
 		return nil, errInvalidCredentials
 	}
 
@@ -155,9 +171,15 @@ func (s *authService) Refresh(ctx context.Context, refreshToken string) (*TokenP
 		return nil, errInvalidCredentials
 	}
 
-	// Rotation: invalidate the presented token before issuing a new pair.
-	if err := s.refresh.Revoke(ctx, rt.ID); err != nil {
+	// Rotation: invalidate the presented token before issuing a new pair. The
+	// conditional revoke is atomic — if we did not win (another concurrent
+	// refresh already rotated this token, or it is being reused), reject.
+	won, err := s.refresh.Revoke(ctx, rt.ID)
+	if err != nil {
 		return nil, apperror.Internal(err)
+	}
+	if !won {
+		return nil, errInvalidCredentials
 	}
 	return s.issueTokenPair(ctx, rt.UserID)
 }
@@ -175,7 +197,9 @@ func (s *authService) Logout(ctx context.Context, refreshToken string) error {
 	if rt.RevokedAt != nil {
 		return nil
 	}
-	if err := s.refresh.Revoke(ctx, rt.ID); err != nil {
+	// Idempotent: ignore whether we won the race — the token ends up revoked
+	// either way.
+	if _, err := s.refresh.Revoke(ctx, rt.ID); err != nil {
 		return apperror.Internal(err)
 	}
 	return nil

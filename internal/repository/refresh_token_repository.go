@@ -25,7 +25,11 @@ type RefreshToken struct {
 type RefreshTokenRepository interface {
 	Create(ctx context.Context, rt *RefreshToken) (*RefreshToken, error)
 	GetByHash(ctx context.Context, hash string) (*RefreshToken, error)
-	Revoke(ctx context.Context, id int64) error
+	// Revoke atomically marks a not-yet-revoked token as revoked. The bool
+	// reports whether this call performed the transition (true) or the token
+	// was already revoked / gone (false), letting callers detect a rotation
+	// race or token reuse.
+	Revoke(ctx context.Context, id int64) (bool, error)
 }
 
 // refreshTokenRepository is the GORM-backed RefreshTokenRepository.
@@ -60,12 +64,18 @@ func (r *refreshTokenRepository) GetByHash(ctx context.Context, hash string) (*R
 	return &rt, nil
 }
 
-// Revoke marks the token with the given ID as revoked. It is idempotent: a
-// no-op (no error) if the row no longer exists.
-func (r *refreshTokenRepository) Revoke(ctx context.Context, id int64) error {
+// Revoke atomically marks the token as revoked only if it is not already
+// revoked. It returns true when this call performed the transition, false when
+// the token was already revoked or no longer exists. The conditional WHERE
+// makes concurrent refreshes safe: only one caller can win the rotation.
+func (r *refreshTokenRepository) Revoke(ctx context.Context, id int64) (bool, error) {
 	now := time.Now().UTC()
-	return r.db.WithContext(ctx).
+	res := r.db.WithContext(ctx).
 		Model(&RefreshToken{}).
-		Where("id = ?", id).
-		Update("revoked_at", now).Error
+		Where("id = ? AND revoked_at IS NULL", id).
+		Update("revoked_at", now)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected == 1, nil
 }

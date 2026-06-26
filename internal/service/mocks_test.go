@@ -142,12 +142,14 @@ func (m *mockRefreshRepo) GetByHash(_ context.Context, hash string) (*repository
 	return nil, repository.ErrNotFound
 }
 
-func (m *mockRefreshRepo) Revoke(_ context.Context, id int64) error {
-	if rt, ok := m.byID[id]; ok {
-		now := time.Now().UTC()
-		rt.RevokedAt = &now
+func (m *mockRefreshRepo) Revoke(_ context.Context, id int64) (bool, error) {
+	rt, ok := m.byID[id]
+	if !ok || rt.RevokedAt != nil {
+		return false, nil
 	}
-	return nil
+	now := time.Now().UTC()
+	rt.RevokedAt = &now
+	return true, nil
 }
 
 // mockClickRepo is a configurable test double for repository.ClickRepository.

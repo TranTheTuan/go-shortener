@@ -54,7 +54,9 @@ func registerRoutes(e *echo.Echo, h Handlers, apiKeys []string, issuer *token.Is
 	auth.POST("/logout", h.Auth.Logout)
 	auth.GET("/me", h.Auth.Me, appmw.JWT(issuer))
 
-	users := e.Group("/users")
+	// User lookups require authentication so the roster (usernames + emails) is
+	// not exposed anonymously.
+	users := e.Group("/users", appmw.JWT(issuer))
 	users.GET("", h.User.List)
 	users.GET("/:id", h.User.Get)
 

@@ -1,6 +1,7 @@
 ---
-status: pending
+status: completed
 created: 2026-06-22
+completed: 2026-06-26
 slug: username-password-auth
 spec: ../reports/spec-260622-1539-username-password-auth.md
 ---
@@ -23,11 +24,19 @@ Do NOT build user-owned API keys / rate-limiting now (future).
 
 | # | Phase | Status | Depends on |
 |---|-------|--------|-----------|
-| 1 | [Config, deps & migrations](phase-01-config-deps-migrations.md) | pending | — |
-| 2 | [Repository layer](phase-02-repository-layer.md) | pending | 1 |
-| 3 | [pkg/token + AuthService](phase-03-token-and-auth-service.md) | pending | 2 |
-| 4 | [Middleware, handlers & wiring](phase-04-middleware-handlers-wiring.md) | pending | 3 |
-| 5 | [Tests & docs](phase-05-tests-and-docs.md) | pending | 4 |
+| 1 | [Config, deps & migrations](phase-01-config-deps-migrations.md) | ✅ done | — |
+| 2 | [Repository layer](phase-02-repository-layer.md) | ✅ done | 1 |
+| 3 | [pkg/token + AuthService](phase-03-token-and-auth-service.md) | ✅ done | 2 |
+| 4 | [Middleware, handlers & wiring](phase-04-middleware-handlers-wiring.md) | ✅ done | 3 |
+| 5 | [Tests & docs](phase-05-tests-and-docs.md) | ✅ done | 4 |
+
+## Post-review fixes (code-reviewer 260626)
+
+- H1: `/users` list/get now behind JWT (no anonymous roster leak).
+- H2: login is constant-time (dummy-hash compare on miss) — no email enumeration.
+- M1: refresh revoke is atomic (`WHERE revoked_at IS NULL` + RowsAffected) — race-safe rotation + reuse → 401.
+- M3: password length capped at 72 bytes (bcrypt limit / DoS guard).
+- Deferred (acceptable): full refresh-token-family reuse-detection, dev empty-secret guard, `expires_in` rounding.
 
 ## Key Dependencies
 
