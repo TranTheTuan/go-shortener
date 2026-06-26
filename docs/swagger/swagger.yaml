@@ -364,6 +364,8 @@ paths:
             items:
               $ref: '#/definitions/github_com_TranTheTuan_go-shortener_internal_repository.User'
             type: array
+      security:
+      - BearerAuth: []
       summary: List users
       tags:
       - users
@@ -390,6 +392,8 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      security:
+      - BearerAuth: []
       summary: Get a user by ID
       tags:
       - users

@@ -130,6 +130,10 @@ All values have defaults, so the server runs without any configuration.
 | `SHORTENER_BASE_URL`      | `http://localhost:8080` | Origin used to build short URLs |
 | `SHORTENER_API_KEYS`      | _(empty)_     | Comma-separated keys for `X-API-Key` (empty = reject all writes) |
 | `SHORTENER_CODE_LENGTH`   | `7`           | Length of generated short codes  |
+| `AUTH_JWT_SECRET`         | `dev-insecure-change-me` | HS256 signing secret for access tokens. The default is rejected outside `development` |
+| `AUTH_ACCESS_TTL`         | `15m`         | Access-token lifetime            |
+| `AUTH_REFRESH_TTL`        | `168h`        | Refresh-token lifetime (7 days)  |
+| `AUTH_BCRYPT_COST`        | `12`          | bcrypt work factor for password hashing |
 
 ## Database Migrations
 
@@ -149,7 +153,11 @@ make migrate-version                         # print the current version
 | Method | Path                      | Auth    | Description                        |
 | ------ | ------------------------- | ------- | --------------------------------- |
 | GET    | `/healthz`                | —       | Health check                      |
-| POST   | `/users`                  | —       | Create a user                     |
+| POST   | `/auth/register`          | —       | Register a user (username, email, password) |
+| POST   | `/auth/login`             | —       | Log in by email → access + refresh tokens |
+| POST   | `/auth/refresh`           | —       | Exchange a refresh token for a new pair |
+| POST   | `/auth/logout`            | —       | Revoke a refresh token            |
+| GET    | `/auth/me`                | Bearer  | Get the authenticated user        |
 | GET    | `/users`                  | —       | List users                        |
 | GET    | `/users/:id`              | —       | Get a user by ID                  |
 | POST   | `/api/links`              | API key | Create a short link               |
@@ -178,22 +186,41 @@ Responses use a uniform envelope:
 
 ```jsonc
 // Success
-{ "data": { "id": 1, "name": "Alice", "email": "alice@example.com" } }
+{ "data": { "id": 1, "username": "alice", "email": "alice@example.com" } }
 
 // Error
 { "error": { "code": "NOT_FOUND", "message": "user not found" } }
 ```
 
-Example:
+### Authentication
+
+Register, then log in by **email** to receive a short-lived access token and a
+refresh token. Send the access token as `Authorization: Bearer <token>` on
+protected routes (e.g. `/auth/me`). Refresh tokens are stored hashed and rotate
+on every use; `/auth/logout` revokes one.
 
 ```bash
-curl -X POST localhost:8080/users \
+# Register (username + email both unique; password ≥ 8 chars)
+curl -X POST localhost:8080/auth/register \
   -H 'Content-Type: application/json' \
-  -d '{"name":"Alice","email":"alice@example.com"}'
+  -d '{"username":"alice","email":"alice@example.com","password":"s3cretpw!"}'
+
+# Log in (by email) → tokens
+curl -X POST localhost:8080/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"alice@example.com","password":"s3cretpw!"}'
+# → { "data": { "access_token": "...", "refresh_token": "...", "token_type": "Bearer", "expires_in": 900 } }
+
+# Call a protected route
+curl localhost:8080/auth/me -H 'Authorization: Bearer <access_token>'
+
+# Rotate tokens / log out
+curl -X POST localhost:8080/auth/refresh -H 'Content-Type: application/json' -d '{"refresh_token":"..."}'
+curl -X POST localhost:8080/auth/logout  -H 'Content-Type: application/json' -d '{"refresh_token":"..."}'
 ```
 
-The `users` resource is a worked example demonstrating the full handler →
-service → repository flow. Replace it with your own domain.
+The `users` resource (read-only `GET` endpoints) demonstrates the handler →
+service → repository flow; user creation is owned by `/auth/register`.
 
 ## Make Targets
 

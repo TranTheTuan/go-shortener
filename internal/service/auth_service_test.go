@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -151,6 +152,28 @@ func TestRefresh_RotatesAndRevokesOld(t *testing.T) {
 	if refresh.byHash[oldHash].RevokedAt == nil {
 		t.Error("old refresh token must be revoked after rotation")
 	}
+}
+
+func TestRefresh_ReusedTokenRejected(t *testing.T) {
+	svc, _, _ := newAuthSvc()
+	_, _ = svc.Register(context.Background(), validRegister())
+	pair, _ := svc.Login(context.Background(), LoginInput{Email: "alice@example.com", Password: "s3cretpw"})
+
+	// First refresh rotates (revokes) the presented token.
+	if _, err := svc.Refresh(context.Background(), pair.RefreshToken); err != nil {
+		t.Fatalf("first Refresh: %v", err)
+	}
+	// Reusing the same (now-revoked) token must be rejected.
+	_, err := svc.Refresh(context.Background(), pair.RefreshToken)
+	mustStatus(t, err, 401)
+}
+
+func TestRegister_PasswordTooLong(t *testing.T) {
+	svc, _, _ := newAuthSvc()
+	in := validRegister()
+	in.Password = strings.Repeat("a", 73) // exceeds bcrypt's 72-byte limit
+	_, err := svc.Register(context.Background(), in)
+	mustStatus(t, err, 400)
 }
 
 func TestRefresh_Invalid(t *testing.T) {

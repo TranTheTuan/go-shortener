@@ -26,6 +26,7 @@ func NewUserHandler(users service.UserService) *UserHandler {
 // @Summary      Get a user by ID
 // @Tags         users
 // @Produce      json
+// @Security     BearerAuth
 // @Param        id   path      int  true  "User ID"
 // @Success      200  {object}  github_com_TranTheTuan_go-shortener_internal_repository.User
 // @Failure      400  {object}  response.Envelope
@@ -50,6 +51,7 @@ func (h *UserHandler) Get(c echo.Context) error {
 // @Summary      List users
 // @Tags         users
 // @Produce      json
+// @Security     BearerAuth
 // @Success      200  {array}   github_com_TranTheTuan_go-shortener_internal_repository.User
 // @Router       /users [get]
 func (h *UserHandler) List(c echo.Context) error {
