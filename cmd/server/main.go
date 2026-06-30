@@ -100,6 +100,7 @@ func run() error {
 		Link:     handler.NewLinkHandler(linkSvc, analyticsSvc, dedupCache, cfg.Shortener.BaseURL),
 		Redirect: handler.NewRedirectHandler(linkSvc, analyticsSvc),
 		Auth:     handler.NewAuthHandler(userSvc),
+		Frontend: handler.NewFrontendHandler(cfg.Keycloak.Issuer, cfg.Keycloak.ClientID),
 	}, router.Deps{
 		Verifier: verifier,
 		Users:    userSvc,
