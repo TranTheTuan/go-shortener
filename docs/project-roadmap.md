@@ -1,8 +1,8 @@
 # Project Roadmap & Development Status
 
-**Current Date**: 2026-06-22  
-**Active Branch**: `feat/auth` (username/password authentication)  
-**Main Branch**: `master`
+**Current Date**: 2026-06-30  
+**Active Branch**: `master` (Keycloak OIDC resource server)  
+**Latest**: v1.1 merged
 
 ## Version History
 
@@ -34,71 +34,59 @@
 
 ---
 
-### v1.1 - Authentication (IN PROGRESS)
-**Status**: 🔄 In Progress | **Branch**: `feat/auth` | **Target**: 2026-06-30
+### v1.1 - Keycloak OIDC Authentication (COMPLETE)
+**Status**: ✅ Complete | **Merged**: 2026-06-30 | **Branch**: `master`
 
-#### Features Being Added
-- **Username/password registration**: POST /auth/register
-  - Username validation (3–50 alphanumeric+underscore)
-  - Email uniqueness + format validation
-  - Password hashing (bcrypt, cost=12)
-  - Optional full name field
-
-- **Email/password login**: POST /auth/login
-  - Email lookup
-  - bcrypt password verification
-  - Access + refresh token issuance
-  - Generic failure message (no user enumeration)
-
-- **Token refresh**: POST /auth/refresh
-  - Validate refresh token (SHA256 hash check)
-  - Rotate tokens (issue new pair)
-  - Revoke old refresh token
-
-- **Logout**: POST /auth/logout (JWT required)
-  - Mark refresh token as revoked
-  - Prevent future use
-
-- **User profile**: GET /auth/me (JWT required)
-  - Return authenticated user details
+#### Features Delivered
+- **Keycloak delegation**: Service is OIDC resource server (validates Keycloak tokens)
+- **JIT provisioning**: Keycloak `sub` auto-mapped to local users on first authenticated request
+- **Token validation**: go-oidc with in-cluster JWKS fetching (lazy initialization, no startup block)
+- **User profile**: GET /auth/me returns authenticated user synced from Keycloak claims
+- **Link ownership**: `/api/links` create owned by authenticated user (keyed on JIT-mapped local id)
+- **Audience validation**: Optional `aud` check when `KEYCLOAK_CLIENT_ID` configured
 
 #### Database Changes (Migrations)
-- Migration 4: Add `username` (UNIQUE), `password_hash` to users table
-- Migration 5: Create `refresh_tokens` table with revocation support
+- Migration 9: Add `keycloak_sub` (UNIQUE, nullable), drop `password_hash` + `refresh_tokens` table
 
-#### Configuration
-- `AUTH_JWT_SECRET`: HS256 signing key (required outside development)
-- `AUTH_ACCESS_TTL`: Access token lifetime (default 15m)
-- `AUTH_REFRESH_TTL`: Refresh token lifetime (default 7d)
-- `AUTH_BCRYPT_COST`: bcrypt work factor (default 12)
+#### Configuration (New)
+- `KEYCLOAK_ISSUER`: Expected token issuer (e.g., `https://auth.cd.me/realms/<realm>`)
+- `KEYCLOAK_JWKS_URL`: In-cluster JWKS endpoint (in-cluster DNS, not public jwks_uri)
+- `KEYCLOAK_CLIENT_ID`: Backend client ID for audience validation (empty = skip `aud` check)
 
 #### Security Features
-- Token rotation on refresh (new refresh token each time)
-- SHA256 hashing of refresh tokens (raw tokens never in DB)
-- Bcrypt password hashing with configurable cost
-- Fail-closed defaults (empty JWT secret rejected in production)
+- OAuth 2.0/OIDC standard (industry best practice)
+- Token signature validation via JWKS (RS256 assumed)
+- Issuer (`iss`) validation against public domain
+- Expiry (`exp`) checked automatically
+- Audience (`aud`) optionally validated
+- No password storage (delegated to Keycloak)
+
+#### Code Changes
+- Removed: `AuthService`, self-issued JWT token management, refresh token logic, bcrypt
+- Added: `pkg/keycloak/verifier.go`, `internal/middleware/keycloak.go`, `UserService.SyncFromKeycloak()`
+- Modified: User repository (keycloak_sub field), router (Keycloak middleware on protected routes)
+- Removed auth write endpoints: `/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`
+- Kept: `/auth/me` (now returns synced local user from Keycloak identity)
 
 #### Testing
-- Unit tests: service layer (auth logic, validation)
-- Integration tests: full login/refresh/logout flow
-- Mock repositories for handler tests
-- Table-driven test cases for edge conditions
+- Keycloak middleware unit tests (mock TokenVerifier + UserService)
+- JIT provisioning tests (new sub → create, existing sub → update)
+- Token validation tests (valid token, expired, wrong issuer, wrong audience)
+- Downstream tests unchanged (quota, dedup, link ownership all use local user_id)
 
-#### Documentation
-- Handler docstrings (Swagger comments)
-- Service layer comments (validation rules, token lifecycle)
-- README examples (curl commands for auth flow)
-- Update code-standards.md with auth patterns
+#### Deployment Notes
+- Keycloak backend client requires `email` + `profile` scopes
+- Configure audience mapper so access tokens include backend client in `aud`
+- Set `KEYCLOAK_ISSUER` to realm's public issuer (e.g., `https://auth.cd.me/realms/<realm>`)
+- Set `KEYCLOAK_JWKS_URL` to in-cluster endpoint (e.g., `http://keycloak-keycloakx-http.keycloak.svc.cluster.local/...`)
 
 #### Acceptance Criteria
-- ✅ User registration with validation
-- ✅ Login returns valid JWT access token + refresh token
-- ✅ Refresh endpoint rotates tokens correctly
-- ✅ Logout revokes refresh token
-- ✅ GET /auth/me returns current user (JWT required)
-- ✅ All new code has >85% test coverage
-- ✅ No raw tokens/passwords in logs
-- ✅ Generic auth failure messages (UNAUTHORIZED)
+- ✅ Valid Keycloak access token → create/list links, `/auth/me`, `/users` work
+- ✅ Invalid/expired/foreign-aud token → 401
+- ✅ User JIT-provisioned once, reused after
+- ✅ Link ownership + daily quota behave exactly as before
+- ✅ No self-issued tokens, no password storage, no X-API-Key
+- ✅ App starts even if Keycloak briefly unavailable (lazy JWKS)
 
 ---
 
@@ -156,27 +144,36 @@
 - UserIDFrom context accessor
 - Fail-closed defaults
 
-### Phase 9: Authentication (IN PROGRESS) 🔄
-- Register endpoint
-- Login endpoint
-- Refresh endpoint
-- Logout endpoint
-- Profile endpoint
+### Phase 9: Keycloak OIDC Authentication (COMPLETE) ✅
+- Keycloak token validation (go-oidc)
+- JIT provisioning (sync Keycloak identity to local users)
+- `/auth/me` endpoint (returns synced user)
+- Keycloak middleware (validates Bearer tokens)
+- Link ownership (tied to Keycloak-mapped user)
 
 ---
 
 ## Upcoming Work (Post v1.1)
 
-### v1.2 - Link Management Enhancements (Planned)
+### v1.2 - Keycloak Role-Based Authorization (Planned)
+**Timeline**: Q3 2026
+
+- **Role mapping**: Check Keycloak `realm_access.roles` claims
+- **Admin endpoints**: Restricted to `admin` role (user management, link stats)
+- **Owner-only operations**: Link delete/update for creator
+- **Fine-grained access**: Per-endpoint role checks
+
+---
+
+### v1.3 - Link Management Enhancements (Planned)
 **Timeline**: Q3 2026
 
 - **Delete link** (owner-only or admin)
 - **Update link expiry**
 - **Custom short codes** (alphanumeric, owner-created)
-- **Link ownership** (associate with user account)
 - **Draft/published states** (private links)
 
-### v1.3 - Admin Dashboard (Planned)
+### v1.4 - Admin Dashboard (Planned)
 **Timeline**: Q3/Q4 2026
 
 - Web UI (React/Vue, separate repo)
@@ -185,31 +182,39 @@
 - User management: list, promote to admin
 - Rate limiting configuration
 
-### v1.4 - Rate Limiting (Planned)
+### v1.5 - Rate Limiting (Planned)
 **Timeline**: Q4 2026
 
-- Per-API-key rate limiting (token bucket)
-- Per-IP rate limiting (anonymous users)
+- Per-user rate limiting (Keycloak sub)
+- Per-IP rate limiting (anonymous redirects)
 - Endpoint-specific limits
 - Metrics: current usage, reset time
 - Configurable thresholds
 
-### v1.5 - Observability (Planned)
+### v1.6 - Observability (Planned)
 **Timeline**: Q4 2026 / Q1 2027
 
 - Prometheus metrics (request count, latency, cache hit ratio)
 - Tracing integration (OpenTelemetry)
 - Request-scoped logging improvements
-- Health check details (database, cache status)
+- Health check details (database, cache status, Keycloak status)
 - Alerting rules (example: cache down)
 
-### v1.6 - Multi-Database Support (Planned)
+### v1.7 - Multi-Database Support (Planned)
 **Timeline**: Q1 2027+
 
 - MySQL driver (in addition to PostgreSQL)
 - Migration tooling for both
 - Database abstraction improvements
 - Connection pool configuration per DB
+
+### v1.8 - Keycloak Admin API Integration (Future)
+**Timeline**: 2027+
+
+- User provisioning from Keycloak (bulk import)
+- Sync realm roles to local permissions
+- Real-time user attribute updates
+- Webhook handlers for Keycloak events
 
 ### v2.0 - Advanced Features (Future)
 **Timeline**: 2027+
@@ -230,11 +235,6 @@
 - Stable, tested code
 - Deployed to production
 - Tag-based releases
-
-### feat/auth (Active Development)
-- Username/password authentication
-- Will merge to master after review + testing
-- Deadline: 2026-06-30
 
 ### Other Feature Branches (As Needed)
 - `feat/admin-dashboard`
@@ -293,21 +293,22 @@
 ## Known Limitations & Workarounds
 
 ### Current Scope
-1. **Single instance**: No multi-instance coordination (yet)
+1. **Single instance**: No multi-instance token cache coordination
 2. **No custom codes**: Users cannot specify short code
-3. **No link ownership**: All links are public (auth in progress)
-4. **No rate limiting**: Potential abuse vector
-5. **No dashboard**: CLI/API only
+3. **No per-user rate limiting**: Quota is per-plan only (same for all users)
+4. **No dashboard**: CLI/API only
+5. **Pre-auth users orphaned**: Demo users with null `keycloak_sub` won't map to Keycloak
 
 ### Workarounds
 - Run multiple instances behind load balancer (stateless)
 - Share PostgreSQL + Redis (single writer allowed)
-- Use API key quotas to prevent abuse (manual)
+- Migrate demo users via script or eventual Keycloak admin API sync
 
 ### Planned Fixes
-- Rate limiting (v1.4)
-- Link ownership (v1.2)
-- Admin dashboard (v1.3)
+- Rate limiting (v1.5)
+- Role-based authorization (v1.2)
+- Admin dashboard (v1.4)
+- Keycloak sync (v1.8)
 
 ---
 
@@ -372,6 +373,6 @@
 
 ---
 
-**Last Updated**: 2026-06-22  
-**Next Review**: 2026-06-30 (post v1.1 merge)  
+**Last Updated**: 2026-06-30  
+**Next Review**: 2026-07-30 (post v1.2 planning)  
 **Maintained by**: @TranTheTuan

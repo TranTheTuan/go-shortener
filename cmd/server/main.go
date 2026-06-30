@@ -19,8 +19,8 @@ import (
 	"github.com/TranTheTuan/go-shortener/internal/router"
 	"github.com/TranTheTuan/go-shortener/internal/service"
 	"github.com/TranTheTuan/go-shortener/pkg/database"
+	"github.com/TranTheTuan/go-shortener/pkg/keycloak"
 	"github.com/TranTheTuan/go-shortener/pkg/redisbreaker"
-	"github.com/TranTheTuan/go-shortener/pkg/token"
 )
 
 // @title                      Go URL Shortener API
@@ -28,13 +28,10 @@ import (
 // @description                URL shortener with click analytics, built on Echo + GORM + PostgreSQL.
 // @description                All responses use a uniform envelope: success payloads under `data`, errors under `error`.
 // @BasePath                   /
-// @securityDefinitions.apikey ApiKeyAuth
-// @in                         header
-// @name                       X-API-Key
 // @securityDefinitions.apikey BearerAuth
 // @in                         header
 // @name                       Authorization
-// @description                Bearer access token. Format: "Bearer {token}".
+// @description                Keycloak access token. Format: "Bearer {token}".
 func main() {
 	if err := run(); err != nil {
 		slog.Error("server exited with error", "error", err)
@@ -78,7 +75,8 @@ func run() error {
 
 	// Wire dependencies: repository -> service -> handler.
 	userRepo := repository.NewUserRepository(db)
-	userSvc := service.NewUserService(userRepo)
+	planRepo := repository.NewPlanRepository(db)
+	userSvc := service.NewUserService(userRepo, planRepo, cfg.Quota.DefaultPlanCode)
 
 	linkRepo := repository.NewLinkRepository(db)
 	clickRepo := repository.NewClickRepository(db)
@@ -86,14 +84,13 @@ func run() error {
 	linkSvc := service.NewLinkService(linkRepo, linkCacheRepo, cfg.Shortener.CodeLength, cfg.Shortener.CacheTTL)
 	analyticsSvc := service.NewAnalyticsService(linkRepo, clickRepo)
 
-	issuer := token.NewIssuer(cfg.Auth.JWTSecret, cfg.Auth.AccessTTL)
-	refreshRepo := repository.NewRefreshTokenRepository(db)
-	authSvc := service.NewAuthService(userRepo, refreshRepo, issuer, cfg.Auth.RefreshTTL, cfg.Auth.BcryptCost)
+	// Keycloak token verifier. The background context backs lazy JWKS fetch +
+	// key rotation; construction does not call Keycloak (app boots regardless).
+	verifier := keycloak.NewVerifier(context.Background(), cfg.Keycloak.Issuer, cfg.Keycloak.JWKSURL, cfg.Keycloak.ClientID)
 
 	// Quota + per-owner dedup: Redis access guarded by a circuit breaker.
 	breaker := redisbreaker.New(cfg.Quota.BreakerMaxFailures, cfg.Quota.BreakerOpenTimeout)
 	dedupCache := service.NewDedupCache(rdb, breaker, cfg.Shortener.CacheTTL)
-	planRepo := repository.NewPlanRepository(db)
 	subRepo := repository.NewSubscriptionRepository(db)
 	quotaSvc := service.NewQuotaService(rdb, breaker, planRepo, subRepo, cfg.Quota.DefaultPlanCode, cfg.Quota.BasicFallbackLimit)
 
@@ -102,12 +99,12 @@ func run() error {
 		User:     handler.NewUserHandler(userSvc),
 		Link:     handler.NewLinkHandler(linkSvc, analyticsSvc, dedupCache, cfg.Shortener.BaseURL),
 		Redirect: handler.NewRedirectHandler(linkSvc, analyticsSvc),
-		Auth:     handler.NewAuthHandler(authSvc, userSvc),
+		Auth:     handler.NewAuthHandler(userSvc),
 	}, router.Deps{
-		Issuer:  issuer,
-		APIKeys: cfg.Shortener.APIKeys,
-		Dedup:   dedupCache,
-		Quota:   quotaSvc,
+		Verifier: verifier,
+		Users:    userSvc,
+		Dedup:    dedupCache,
+		Quota:    quotaSvc,
 	})
 	e.Server.ReadTimeout = cfg.Server.ReadTimeout
 	e.Server.WriteTimeout = cfg.Server.WriteTimeout

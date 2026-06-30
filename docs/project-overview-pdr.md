@@ -26,13 +26,12 @@
 - Real-time stats retrieval via `/api/links/:code/stats`
 - Data persistence in PostgreSQL with 45-char IP field
 
-### 3. Authentication (Complete - feat/auth)
-- **Username/password auth**: bcrypt password hashing (configurable cost)
-- **JWT tokens**: HS256 access tokens (default 15min TTL)
-- **Token rotation**: Refresh tokens with rotation on use
-- **Token revocation**: SHA256 hashing (raw tokens never stored in DB)
-- **Logout**: Explicit refresh token revocation
-- **User profile**: `/auth/me` returns current user
+### 3. Authentication (Complete - Keycloak OIDC)
+- **Identity provider**: Keycloak (external, owns credentials & sessions)
+- **Token validation**: go-oidc with in-cluster JWKS fetching (lazy, no startup block)
+- **JIT provisioning**: Keycloak `sub` auto-mapped to local users on first request
+- **User profile**: `/auth/me` returns authenticated user (Keycloak identity synced locally)
+- **Delegation**: Service is an OIDC resource server (validates, does not issue tokens)
 
 ### 4. Caching (Complete)
 - Redis cache for link resolution (prefix: `link:{code}`)
@@ -40,12 +39,12 @@
 - Graceful degradation to PostgreSQL on cache miss
 - Automatic cache invalidation on link expiry
 
-### 5. Security (Complete)
-- **API Key auth**: `X-API-Key` header (fail-closed: empty key set rejects all writes)
-- **JWT auth**: Bearer token in Authorization header
-- **Password security**: bcrypt with configurable work factor (default 12)
-- **Token storage**: Never store raw tokens; SHA256 hash in DB
-- **User enumeration prevention**: Generic auth failure message
+### 5. Security (Complete - Keycloak-Delegated)
+- **OAuth 2.0/OIDC**: Standard flows via Keycloak (industry standard)
+- **Token validation**: Bearer token in Authorization header (Keycloak-issued only)
+- **JIT identity mapping**: Keycloak `sub`/`email`/`preferred_username` claims
+- **No password storage**: Credentials managed by Keycloak
+- **Audience validation**: Optional `aud` check (client-id in token)
 - **HTTPS ready**: No enforcement (let reverse proxy handle)
 
 ## Non-Functional Requirements
@@ -120,17 +119,17 @@ Each layer depends on interfaces of lower layers → testable, swappable, mainta
 
 | Table | Purpose | Key Constraints |
 |-------|---------|-----------------|
-| `users` | User accounts | email + username UNIQUE, bcrypt password |
-| `links` | Short URLs | short_code UNIQUE (16 chars), expires_at nullable |
+| `users` | User accounts | email + username UNIQUE, keycloak_sub UNIQUE (nullable for orphaned demo users) |
+| `links` | Short URLs | short_code UNIQUE (16 chars), expires_at nullable, user_id FK |
 | `clicks` | Analytics events | link_id FK, referrer/ip/user_agent tracked |
-| `refresh_tokens` | Auth tokens | token_hash UNIQUE (SHA256), revocable, expires |
 
 ## Deployment Model
 
 - **Environment**: Configurable (development, staging, production)
 - **Database**: PostgreSQL 12+
 - **Cache**: Redis 6+
-- **Secrets**: `AUTH_JWT_SECRET` (required outside dev), API keys comma-separated
+- **Auth**: Keycloak instance (in-cluster or public via DNS)
+- **Secrets**: `KEYCLOAK_ISSUER`, `KEYCLOAK_JWKS_URL`, optional `KEYCLOAK_CLIENT_ID`
 - **Server**: HTTP (no TLS; use reverse proxy)
 - **Shutdown**: Graceful (drains in-flight requests, timeout configurable)
 
@@ -168,6 +167,6 @@ See `/README.md` for:
 
 ---
 
-**Last Updated**: 2026-06-22  
-**Version**: 1.0 (feat/auth branch)  
-**Status**: Feature-complete for v1; auth system in active development
+**Last Updated**: 2026-06-30  
+**Version**: 1.1 (Keycloak OIDC resource server)  
+**Status**: Feature-complete for v1.1; Keycloak auth deployed

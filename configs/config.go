@@ -11,10 +11,6 @@ import (
 	"github.com/caarlos0/env/v10"
 )
 
-// defaultDevJWTSecret is the placeholder signing secret. It is accepted only in
-// the development environment; any other environment must override it.
-const defaultDevJWTSecret = "dev-insecure-change-me"
-
 // Config is the top-level configuration container. Nested sections are given
 // an envPrefix so their variables are namespaced (e.g. DB_HOST, SERVER_PORT).
 type Config struct {
@@ -23,8 +19,24 @@ type Config struct {
 	Database  DatabaseConfig  `envPrefix:"DB_"`
 	Shortener ShortenerConfig `envPrefix:"SHORTENER_"`
 	Redis     RedisConfig     `envPrefix:"REDIS_"`
-	Auth      AuthConfig      `envPrefix:"AUTH_"`
+	Keycloak  KeycloakConfig  `envPrefix:"KEYCLOAK_"`
 	Quota     QuotaConfig     `envPrefix:"QUOTA_"`
+}
+
+// KeycloakConfig holds the OIDC resource-server settings. The service validates
+// Keycloak-issued access tokens; it no longer issues its own.
+type KeycloakConfig struct {
+	// Issuer is the public token issuer used to validate the `iss` claim,
+	// e.g. https://auth.cd.me/realms/<realm>. Must match tokens byte-for-byte.
+	Issuer string `env:"ISSUER"`
+	// JWKSURL is the in-cluster certs endpoint the verifier fetches public keys
+	// from, e.g. http://<keycloak-svc>/realms/<realm>/protocol/openid-connect/certs.
+	// Build it by hand (internal host + the standard path); do NOT copy the
+	// public jwks_uri from the .well-known document.
+	JWKSURL string `env:"JWKS_URL"`
+	// ClientID is the backend client used as the expected audience. Empty means
+	// skip audience validation (oidc.Config.SkipClientIDCheck).
+	ClientID string `env:"CLIENT_ID"`
 }
 
 // QuotaConfig holds daily-link-quota settings.
@@ -41,26 +53,10 @@ type QuotaConfig struct {
 	BreakerOpenTimeout time.Duration `env:"BREAKER_OPEN_TIMEOUT" envDefault:"5m"`
 }
 
-// AuthConfig holds authentication settings.
-type AuthConfig struct {
-	// JWTSecret signs access tokens (HS256). The development default is rejected
-	// in any other environment (fail-closed).
-	JWTSecret string `env:"JWT_SECRET" envDefault:"dev-insecure-change-me"`
-	// AccessTTL is the lifetime of an access token.
-	AccessTTL time.Duration `env:"ACCESS_TTL" envDefault:"15m"`
-	// RefreshTTL is the lifetime of a refresh token.
-	RefreshTTL time.Duration `env:"REFRESH_TTL" envDefault:"168h"`
-	// BcryptCost is the bcrypt work factor for password hashing.
-	BcryptCost int `env:"BCRYPT_COST" envDefault:"12"`
-}
-
 // ShortenerConfig holds URL-shortener settings.
 type ShortenerConfig struct {
 	// BaseURL is the public origin used to build short URLs (e.g. https://sho.rt).
 	BaseURL string `env:"BASE_URL" envDefault:"http://localhost:8080"`
-	// APIKeys is the set of keys accepted on the X-API-Key header. An empty set
-	// rejects every write request (fail-closed).
-	APIKeys []string `env:"API_KEYS" envSeparator:","`
 	// CodeLength is the number of base62 characters in generated short codes.
 	CodeLength int `env:"CODE_LENGTH" envDefault:"7"`
 	// CacheTTL is the default Redis TTL for links without an expiry date.
@@ -122,10 +118,12 @@ func Load() (Config, error) {
 
 // validate enforces invariants that struct-tag defaults cannot express.
 func (c Config) validate() error {
-	// Fail closed: outside development the JWT secret must be set to a real value.
-	if c.Env != "development" &&
-		(c.Auth.JWTSecret == "" || c.Auth.JWTSecret == defaultDevJWTSecret) {
-		return errors.New("config: AUTH_JWT_SECRET must be set to a non-default value outside development")
+	// Fail closed: outside development, Keycloak issuer + JWKS must be configured
+	// or no request can be authenticated.
+	if c.Env != "development" {
+		if c.Keycloak.Issuer == "" || c.Keycloak.JWKSURL == "" {
+			return errors.New("config: KEYCLOAK_ISSUER and KEYCLOAK_JWKS_URL must be set outside development")
+		}
 	}
 	return nil
 }

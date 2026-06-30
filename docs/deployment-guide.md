@@ -6,6 +6,7 @@
 - **Go**: 1.26 or later
 - **PostgreSQL**: 12 or later
 - **Redis**: 6 or later
+- **Keycloak**: Local instance or access to dev realm (e.g., `https://auth.cd.me`)
 - **golang-migrate**: Latest version (for running migrations manually)
 - **Docker** (optional): For containerized local setup
 - **Docker Compose** (optional): For multi-service setup
@@ -14,6 +15,7 @@
 - **Go**: 1.26 (binary compiled locally or in CI)
 - **PostgreSQL**: 12+ with backups enabled
 - **Redis**: 6+ with persistence enabled
+- **Keycloak**: In-cluster service or public instance with configured backend client
 - **Reverse proxy**: nginx or similar (for TLS, load balancing)
 - **Secrets manager**: Vault, AWS Secrets Manager, or environment variables
 
@@ -105,36 +107,27 @@ The server listens on `http://localhost:8080` by default.
 # Health check
 curl http://localhost:8080/healthz
 
-# Create short link (requires API key)
+# Obtain token from Keycloak (example: password grant for local testing)
+TOKEN=$(curl -s https://auth.cd.me/realms/<realm>/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=url-shortener-backend \
+  -d username=alice -d password=... | jq -r .access_token)
+
+# Create short link (requires Keycloak JWT)
 curl -X POST http://localhost:8080/api/links \
-  -H 'X-API-Key: dev-key-1' \
+  -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"url":"https://example.com"}'
 
 # Redirect
 curl -i http://localhost:8080/<short-code>
 
+# Get user profile
+curl http://localhost:8080/auth/me \
+  -H "Authorization: Bearer $TOKEN"
+
 # Get stats
 curl http://localhost:8080/api/links/<short-code>/stats \
-  -H 'X-API-Key: dev-key-1'
-
-# Register user
-curl -X POST http://localhost:8080/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "username": "alice",
-    "email": "alice@example.com",
-    "password": "securepassword123",
-    "name": "Alice"
-  }'
-
-# Login
-curl -X POST http://localhost:8080/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "email": "alice@example.com",
-    "password": "securepassword123"
-  }'
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ---
@@ -204,8 +197,9 @@ services:
       DB_NAME: app
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      SHORTENER_API_KEYS: dev-key-1,dev-key-2
-      AUTH_JWT_SECRET: dev-insecure-change-me
+      KEYCLOAK_ISSUER: https://auth.cd.me/realms/<realm>
+      KEYCLOAK_JWKS_URL: http://keycloak-keycloakx-http.keycloak.svc.cluster.local/realms/<realm>/protocol/openid-connect/certs
+      KEYCLOAK_CLIENT_ID: url-shortener-backend
     ports:
       - "8080:8080"
     depends_on:
@@ -260,15 +254,19 @@ REDIS_POOL_SIZE=50
 
 # URL Shortener
 SHORTENER_BASE_URL=https://sho.rt
-SHORTENER_API_KEYS=<PROD_KEY_1>,<PROD_KEY_2>,<PROD_KEY_3>
 SHORTENER_CODE_LENGTH=7
 SHORTENER_CACHE_TTL=24h
 
-# Authentication
-AUTH_JWT_SECRET=<STRONG_RANDOM_SECRET_256BIT+>
-AUTH_ACCESS_TTL=15m
-AUTH_REFRESH_TTL=168h
-AUTH_BCRYPT_COST=12
+# Keycloak Authentication
+KEYCLOAK_ISSUER=https://auth.cd.me/realms/<realm>
+KEYCLOAK_JWKS_URL=http://keycloak-keycloakx-http.keycloak.svc.cluster.local/realms/<realm>/protocol/openid-connect/certs
+KEYCLOAK_CLIENT_ID=url-shortener-backend
+
+# Quota & Plans
+QUOTA_DEFAULT_PLAN_CODE=basic
+QUOTA_BASIC_FALLBACK_LIMIT=10
+QUOTA_BREAKER_MAX_FAILURES=10
+QUOTA_BREAKER_OPEN_TIMEOUT=5m
 ```
 
 ### Binary Compilation
@@ -683,6 +681,7 @@ SELECT pg_terminate_backend(pid) FROM pg_stat_activity
 
 ---
 
-**Last Updated**: 2026-06-22  
-**Version**: 1.0  
-**Status**: Production-ready for single-instance and scaled deployments
+**Last Updated**: 2026-06-30  
+**Version**: 1.1 (Keycloak OIDC)  
+**Status**: Production-ready with Keycloak authentication  
+**Auth Model**: OIDC resource server (tokens from Keycloak, no self-issued JWT)

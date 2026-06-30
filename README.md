@@ -128,12 +128,10 @@ All values have defaults, so the server runs without any configuration.
 | `DB_MAX_IDLE_CONNS`       | `25`          | Max idle connections             |
 | `DB_CONN_MAX_LIFETIME`    | `5m`          | Max connection lifetime          |
 | `SHORTENER_BASE_URL`      | `http://localhost:8080` | Origin used to build short URLs |
-| `SHORTENER_API_KEYS`      | _(empty)_     | Comma-separated keys for `X-API-Key` (empty = reject all writes) |
 | `SHORTENER_CODE_LENGTH`   | `7`           | Length of generated short codes  |
-| `AUTH_JWT_SECRET`         | `dev-insecure-change-me` | HS256 signing secret for access tokens. The default is rejected outside `development` |
-| `AUTH_ACCESS_TTL`         | `15m`         | Access-token lifetime            |
-| `AUTH_REFRESH_TTL`        | `168h`        | Refresh-token lifetime (7 days)  |
-| `AUTH_BCRYPT_COST`        | `12`          | bcrypt work factor for password hashing |
+| `KEYCLOAK_ISSUER`         | _(required\*)_ | Public token issuer; validated against the access token's `iss` (e.g. `https://auth.cd.me/realms/<realm>`) |
+| `KEYCLOAK_JWKS_URL`       | _(required\*)_ | In-cluster JWKS endpoint for public keys (build by hand; don't copy the public `jwks_uri`) |
+| `KEYCLOAK_CLIENT_ID`      | _(empty)_     | Backend client validated as the token audience; empty skips the audience check |
 | `QUOTA_DEFAULT_PLAN_CODE` | `basic`       | Plan applied when a user has no active subscription |
 | `QUOTA_BASIC_FALLBACK_LIMIT` | `10`       | Daily limit used if the plans table is unreachable |
 | `QUOTA_BREAKER_MAX_FAILURES` | `10`       | Consecutive Redis failures that trip the quota circuit breaker |
@@ -154,52 +152,48 @@ make migrate-version                         # print the current version
 
 ## API
 
+\* `KEYCLOAK_ISSUER` and `KEYCLOAK_JWKS_URL` are required outside the `development` environment (startup fails fast otherwise).
+
 | Method | Path                      | Auth    | Description                        |
 | ------ | ------------------------- | ------- | --------------------------------- |
 | GET    | `/healthz`                | —       | Health check                      |
-| POST   | `/auth/register`          | —       | Register a user (username, email, password) |
-| POST   | `/auth/login`             | —       | Log in by email → access + refresh tokens |
-| POST   | `/auth/refresh`           | —       | Exchange a refresh token for a new pair |
-| POST   | `/auth/logout`            | —       | Revoke a refresh token            |
-| GET    | `/auth/me`                | Bearer  | Get the authenticated user        |
-| GET    | `/users`                  | —       | List users                        |
-| GET    | `/users/:id`              | —       | Get a user by ID                  |
-| POST   | `/api/links`              | JWT or API key | Create a short link (JWT → owned by user; subject to daily quota) |
-| GET    | `/api/links/:code/stats`  | JWT or API key | Click stats for a short link      |
+| GET    | `/auth/me`                | Keycloak JWT | Get the authenticated user    |
+| GET    | `/users`                  | Keycloak JWT | List users                    |
+| GET    | `/users/:id`              | Keycloak JWT | Get a user by ID              |
+| POST   | `/api/links`              | Keycloak JWT | Create a short link (owned by the token's user; subject to daily quota) |
+| GET    | `/api/links/:code/stats`  | Keycloak JWT | Click stats for a short link  |
 | GET    | `/:code`                  | —       | Redirect (302) to the original URL |
 
 ### URL shortener
 
-Create a short link (the `X-API-Key` header must match one of `SHORTENER_API_KEYS`).
+Create a short link with a Keycloak access token (see [Authentication](#authentication)).
 `expires_at` is optional (RFC 3339); omit it for a link that never expires.
 
 ```bash
 curl -X POST localhost:8080/api/links \
-  -H 'X-API-Key: dev-key-1' \
+  -H 'Authorization: Bearer <access_token>' \
   -H 'Content-Type: application/json' \
   -d '{"url":"https://example.com","expires_at":"2030-01-01T00:00:00Z"}'
 # → { "data": { "short_code": "Ab3xY7q", "short_url": "http://localhost:8080/Ab3xY7q", ... } }
 
 curl -i localhost:8080/Ab3xY7q                               # 302 → https://example.com
-curl localhost:8080/api/links/Ab3xY7q/stats -H 'X-API-Key: dev-key-1'
+curl localhost:8080/api/links/Ab3xY7q/stats -H 'Authorization: Bearer <access_token>'
 ```
 
 Visiting an expired link returns `410 Gone`; an unknown code returns `404`.
 
 ### Link ownership & daily quota
 
-`POST /api/links` accepts **either** a JWT (`Authorization: Bearer`) **or** an
-`X-API-Key`. With a JWT the link is owned by that user (`user_id`) and dedup is
-scoped per-owner; with an API key the link is unowned. The redirect endpoint
-stays public.
+Every `/api/links` create is owned by the authenticated user (`user_id`, mapped
+from the Keycloak `sub`); dedup is scoped per-owner. The redirect endpoint stays
+public.
 
-Authenticated users have a daily creation quota from their subscription plan —
-the seeded **basic** plan allows **10 links/day** (resets at 00:00 UTC). The
-11th returns `429 QUOTA_EXCEEDED`. Reusing a URL you already shortened returns
-the existing link and does not consume quota. API-key (unowned) creation is not
-quota-limited. Quota uses Redis behind a circuit breaker, so a Redis outage
-fails open (links still created). Plans live in the `plans` table; a future
-billing system extends `plans`/`subscriptions` to sell higher-quota tiers.
+Each user has a daily creation quota from their subscription plan — the seeded
+**basic** plan allows **10 links/day** (resets at 00:00 UTC). The 11th returns
+`429 QUOTA_EXCEEDED`. Reusing a URL you already shortened returns the existing
+link and does not consume quota. Quota uses Redis behind a circuit breaker, so a
+Redis outage fails open (links still created). Plans live in the `plans` table;
+a future billing system extends `plans`/`subscriptions` to sell higher-quota tiers.
 
 Responses use a uniform envelope:
 
@@ -213,33 +207,32 @@ Responses use a uniform envelope:
 
 ### Authentication
 
-Register, then log in by **email** to receive a short-lived access token and a
-refresh token. Send the access token as `Authorization: Bearer <token>` on
-protected routes (e.g. `/auth/me`). Refresh tokens are stored hashed and rotate
-on every use; `/auth/logout` revokes one.
+Authentication is handled by **Keycloak**; this service is an OIDC *resource
+server* — it only **validates** access tokens, it does not register/login users
+or issue tokens. Obtain an access token from Keycloak (any standard OIDC flow)
+and send it as `Authorization: Bearer <token>` on protected routes.
 
 ```bash
-# Register (username + email both unique; password ≥ 8 chars)
-curl -X POST localhost:8080/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"alice","email":"alice@example.com","password":"s3cretpw!"}'
-
-# Log in (by email) → tokens
-curl -X POST localhost:8080/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"alice@example.com","password":"s3cretpw!"}'
-# → { "data": { "access_token": "...", "refresh_token": "...", "token_type": "Bearer", "expires_in": 900 } }
+# Obtain a token from Keycloak (example: password grant for local testing)
+TOKEN=$(curl -s https://auth.cd.me/realms/<realm>/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=url-shortener-backend \
+  -d username=alice -d password=... | jq -r .access_token)
 
 # Call a protected route
-curl localhost:8080/auth/me -H 'Authorization: Bearer <access_token>'
-
-# Rotate tokens / log out
-curl -X POST localhost:8080/auth/refresh -H 'Content-Type: application/json' -d '{"refresh_token":"..."}'
-curl -X POST localhost:8080/auth/logout  -H 'Content-Type: application/json' -d '{"refresh_token":"..."}'
+curl localhost:8080/auth/me     -H "Authorization: Bearer $TOKEN"
+curl -X POST localhost:8080/api/links -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"url":"https://example.com"}'
 ```
 
-The `users` resource (read-only `GET` endpoints) demonstrates the handler →
-service → repository flow; user creation is owned by `/auth/register`.
+The service validates the token's signature (RS256, via the realm JWKS fetched
+in-cluster), `iss`, `exp`, and — when `KEYCLOAK_CLIENT_ID` is set — `aud`. On the
+first authenticated request a local user is **JIT-provisioned** from the token's
+`sub`/`email`/`preferred_username` claims and reused thereafter; link ownership
+and quota key on that local user.
+
+**Keycloak setup notes:**
+- The backend client needs the `email` + `profile` scopes (the app stores `email` and `preferred_username`).
+- Set `KEYCLOAK_CLIENT_ID` to bind tokens to your client: the token must carry it in `aud` **or** `azp`. Keycloak sets `azp` to the requesting client by default, so this works out of the box — no audience mapper required (add one only if you prefer matching on `aud`). Leave it empty to skip the check.
 
 ## Make Targets
 
