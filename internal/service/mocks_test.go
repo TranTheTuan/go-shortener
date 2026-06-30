@@ -11,7 +11,7 @@ import (
 type mockLinkRepo struct {
 	createFn           func(ctx context.Context, link *repository.Link) (*repository.Link, error)
 	getByCodeFn        func(ctx context.Context, code string) (*repository.Link, error)
-	getByOriginalURLFn func(ctx context.Context, url string) (*repository.Link, error)
+	getByOwnerAndURLFn func(ctx context.Context, ownerID *int64, url string) (*repository.Link, error)
 	createCalls        int
 }
 
@@ -24,9 +24,9 @@ func (m *mockLinkRepo) GetByCode(ctx context.Context, code string) (*repository.
 	return m.getByCodeFn(ctx, code)
 }
 
-func (m *mockLinkRepo) GetByOriginalURL(ctx context.Context, url string) (*repository.Link, error) {
-	if m.getByOriginalURLFn != nil {
-		return m.getByOriginalURLFn(ctx, url)
+func (m *mockLinkRepo) GetByOwnerAndURL(ctx context.Context, ownerID *int64, url string) (*repository.Link, error) {
+	if m.getByOwnerAndURLFn != nil {
+		return m.getByOwnerAndURLFn(ctx, ownerID, url)
 	}
 	return nil, repository.ErrNotFound
 }
@@ -150,6 +150,46 @@ func (m *mockRefreshRepo) Revoke(_ context.Context, id int64) (bool, error) {
 	now := time.Now().UTC()
 	rt.RevokedAt = &now
 	return true, nil
+}
+
+// mockPlanRepo is a configurable test double for repository.PlanRepository.
+type mockPlanRepo struct {
+	byCode map[string]*repository.Plan
+	byID   map[int64]*repository.Plan
+}
+
+func (m *mockPlanRepo) GetByCode(_ context.Context, code string) (*repository.Plan, error) {
+	if p, ok := m.byCode[code]; ok {
+		return p, nil
+	}
+	return nil, repository.ErrNotFound
+}
+
+func (m *mockPlanRepo) GetByID(_ context.Context, id int64) (*repository.Plan, error) {
+	if p, ok := m.byID[id]; ok {
+		return p, nil
+	}
+	return nil, repository.ErrNotFound
+}
+
+// mockSubRepo is a configurable test double for repository.SubscriptionRepository.
+type mockSubRepo struct {
+	active map[int64]*repository.Subscription
+}
+
+func (m *mockSubRepo) Create(_ context.Context, sub *repository.Subscription) (*repository.Subscription, error) {
+	if m.active == nil {
+		m.active = make(map[int64]*repository.Subscription)
+	}
+	m.active[sub.UserID] = sub
+	return sub, nil
+}
+
+func (m *mockSubRepo) GetActiveByUserID(_ context.Context, userID int64) (*repository.Subscription, error) {
+	if s, ok := m.active[userID]; ok {
+		return s, nil
+	}
+	return nil, repository.ErrNotFound
 }
 
 // mockClickRepo is a configurable test double for repository.ClickRepository.

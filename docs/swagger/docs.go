@@ -19,6 +19,9 @@ const docTemplate = `{
             "post": {
                 "security": [
                     {
+                        "BearerAuth": []
+                    },
+                    {
                         "ApiKeyAuth": []
                     }
                 ],
@@ -34,13 +37,6 @@ const docTemplate = `{
                 ],
                 "summary": "Create a short link",
                 "parameters": [
-                    {
-                        "type": "string",
-                        "description": "API key",
-                        "name": "X-API-Key",
-                        "in": "header",
-                        "required": true
-                    },
                     {
                         "description": "URL to shorten (expires_at optional, RFC 3339)",
                         "name": "request",
@@ -65,7 +61,13 @@ const docTemplate = `{
                         }
                     },
                     "401": {
-                        "description": "missing or invalid API key",
+                        "description": "missing or invalid credentials",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    },
+                    "429": {
+                        "description": "daily link quota exceeded",
                         "schema": {
                             "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
                         }

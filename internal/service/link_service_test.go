@@ -34,7 +34,7 @@ func TestLinkService_Create_Valid(t *testing.T) {
 	}
 	svc := NewLinkService(repo, nil, 7, 0)
 
-	link, err := svc.Create(context.Background(), CreateLinkInput{URL: "https://example.com/path"})
+	link, _, err := svc.Create(context.Background(), CreateLinkInput{URL: "https://example.com/path"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestLinkService_Create_InvalidURL(t *testing.T) {
 	svc := NewLinkService(repo, nil, 7, 0)
 
 	for _, raw := range []string{"", "   ", "not-a-url", "ftp://files.example.com", "http://"} {
-		_, err := svc.Create(context.Background(), CreateLinkInput{URL: raw})
+		_, _, err := svc.Create(context.Background(), CreateLinkInput{URL: raw})
 		wantStatus(t, err, http.StatusBadRequest)
 	}
 }
@@ -61,7 +61,7 @@ func TestLinkService_Create_PastExpiry(t *testing.T) {
 	svc := NewLinkService(repo, nil, 7, 0)
 
 	past := time.Now().Add(-time.Hour)
-	_, err := svc.Create(context.Background(), CreateLinkInput{URL: "https://example.com", ExpiresAt: &past})
+	_, _, err := svc.Create(context.Background(), CreateLinkInput{URL: "https://example.com", ExpiresAt: &past})
 	wantStatus(t, err, http.StatusBadRequest)
 }
 
@@ -75,7 +75,7 @@ func TestLinkService_Create_RetriesOnCollision(t *testing.T) {
 	}
 	svc := NewLinkService(repo, nil, 7, 0)
 
-	if _, err := svc.Create(context.Background(), CreateLinkInput{URL: "https://example.com"}); err != nil {
+	if _, _, err := svc.Create(context.Background(), CreateLinkInput{URL: "https://example.com"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if repo.createCalls < 2 {
@@ -91,7 +91,7 @@ func TestLinkService_Create_ExhaustedRetries(t *testing.T) {
 	}
 	svc := NewLinkService(repo, nil, 7, 0)
 
-	_, err := svc.Create(context.Background(), CreateLinkInput{URL: "https://example.com"})
+	_, _, err := svc.Create(context.Background(), CreateLinkInput{URL: "https://example.com"})
 	wantStatus(t, err, http.StatusInternalServerError)
 	if repo.createCalls != maxCodeGenAttempts {
 		t.Errorf("createCalls = %d, want %d", repo.createCalls, maxCodeGenAttempts)
@@ -101,16 +101,19 @@ func TestLinkService_Create_ExhaustedRetries(t *testing.T) {
 func TestLinkService_Create_DeduplicatesExistingURL(t *testing.T) {
 	existing := &repository.Link{ID: 1, ShortCode: "abc1234", OriginalURL: "https://example.com"}
 	repo := &mockLinkRepo{
-		getByOriginalURLFn: func(_ context.Context, _ string) (*repository.Link, error) {
+		getByOwnerAndURLFn: func(_ context.Context, _ *int64, _ string) (*repository.Link, error) {
 			return existing, nil
 		},
 	}
 	cache := &mockLinkCacheRepository{}
 	svc := NewLinkService(repo, cache, 7, 24*time.Hour)
 
-	link, err := svc.Create(context.Background(), CreateLinkInput{URL: "https://example.com"})
+	link, reused, err := svc.Create(context.Background(), CreateLinkInput{URL: "https://example.com"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if !reused {
+		t.Error("expected reused = true for an existing-URL dedup hit")
 	}
 	if link.ShortCode != "abc1234" {
 		t.Errorf("expected existing short code, got %q", link.ShortCode)
@@ -123,10 +126,74 @@ func TestLinkService_Create_DeduplicatesExistingURL(t *testing.T) {
 	}
 }
 
+func TestLinkService_Create_StampsOwnerAndScopesDedup(t *testing.T) {
+	owner := int64(42)
+	var gotOwner *int64
+	repo := &mockLinkRepo{
+		getByOwnerAndURLFn: func(_ context.Context, ownerID *int64, _ string) (*repository.Link, error) {
+			gotOwner = ownerID // capture the dedup scope
+			return nil, repository.ErrNotFound
+		},
+		createFn: func(_ context.Context, link *repository.Link) (*repository.Link, error) {
+			link.ID = 1
+			return link, nil
+		},
+	}
+	svc := NewLinkService(repo, nil, 7, 0)
+
+	link, reused, err := svc.Create(context.Background(), CreateLinkInput{URL: "https://example.com", OwnerID: &owner})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if reused {
+		t.Error("reused should be false for a new link")
+	}
+	if gotOwner == nil || *gotOwner != owner {
+		t.Errorf("dedup must be scoped to owner %d, got %v", owner, gotOwner)
+	}
+	if link.UserID == nil || *link.UserID != owner {
+		t.Errorf("new link must be stamped with owner %d, got %v", owner, link.UserID)
+	}
+}
+
+func TestLinkService_Create_QuotaExhaustedRejectsNew(t *testing.T) {
+	repo := &mockLinkRepo{
+		getByOwnerAndURLFn: func(_ context.Context, _ *int64, _ string) (*repository.Link, error) {
+			return nil, repository.ErrNotFound // no link to reuse
+		},
+		createFn: func(_ context.Context, l *repository.Link) (*repository.Link, error) { return l, nil },
+	}
+	svc := NewLinkService(repo, nil, 7, 0)
+
+	_, _, err := svc.Create(context.Background(), CreateLinkInput{URL: "https://example.com", QuotaExhausted: true})
+	wantStatus(t, err, http.StatusTooManyRequests)
+	if repo.createCalls != 0 {
+		t.Errorf("createCalls = %d, want 0 (must not create when quota exhausted)", repo.createCalls)
+	}
+}
+
+func TestLinkService_Create_QuotaExhaustedStillServesDedup(t *testing.T) {
+	existing := &repository.Link{ID: 1, ShortCode: "abc1234", OriginalURL: "https://example.com"}
+	repo := &mockLinkRepo{
+		getByOwnerAndURLFn: func(_ context.Context, _ *int64, _ string) (*repository.Link, error) {
+			return existing, nil
+		},
+	}
+	svc := NewLinkService(repo, nil, 7, 0)
+
+	link, reused, err := svc.Create(context.Background(), CreateLinkInput{URL: "https://example.com", QuotaExhausted: true})
+	if err != nil {
+		t.Fatalf("reuse must succeed even when over quota, got %v", err)
+	}
+	if !reused || link.ShortCode != "abc1234" {
+		t.Errorf("expected reused existing link, got reused=%v code=%q", reused, link.ShortCode)
+	}
+}
+
 func TestLinkService_Create_CreatesNewWhenExistingExpired(t *testing.T) {
 	past := time.Now().Add(-time.Hour)
 	repo := &mockLinkRepo{
-		getByOriginalURLFn: func(_ context.Context, _ string) (*repository.Link, error) {
+		getByOwnerAndURLFn: func(_ context.Context, _ *int64, _ string) (*repository.Link, error) {
 			return &repository.Link{ID: 1, ShortCode: "old1234", OriginalURL: "https://example.com", ExpiresAt: &past}, nil
 		},
 		createFn: func(_ context.Context, link *repository.Link) (*repository.Link, error) {
@@ -136,7 +203,7 @@ func TestLinkService_Create_CreatesNewWhenExistingExpired(t *testing.T) {
 	}
 	svc := NewLinkService(repo, nil, 7, 0)
 
-	link, err := svc.Create(context.Background(), CreateLinkInput{URL: "https://example.com"})
+	link, _, err := svc.Create(context.Background(), CreateLinkInput{URL: "https://example.com"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

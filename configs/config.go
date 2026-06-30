@@ -24,6 +24,21 @@ type Config struct {
 	Shortener ShortenerConfig `envPrefix:"SHORTENER_"`
 	Redis     RedisConfig     `envPrefix:"REDIS_"`
 	Auth      AuthConfig      `envPrefix:"AUTH_"`
+	Quota     QuotaConfig     `envPrefix:"QUOTA_"`
+}
+
+// QuotaConfig holds daily-link-quota settings.
+type QuotaConfig struct {
+	// DefaultPlanCode is the plan applied when a user has no active subscription.
+	DefaultPlanCode string `env:"DEFAULT_PLAN_CODE" envDefault:"basic"`
+	// BasicFallbackLimit is the last-resort daily limit when the plans table is
+	// unreachable, so a DB hiccup never blocks creation outright.
+	BasicFallbackLimit int `env:"BASIC_FALLBACK_LIMIT" envDefault:"10"`
+	// BreakerMaxFailures is the number of consecutive Redis failures that trips
+	// the circuit breaker open.
+	BreakerMaxFailures int `env:"BREAKER_MAX_FAILURES" envDefault:"10"`
+	// BreakerOpenTimeout is how long the breaker stays open before a half-open probe.
+	BreakerOpenTimeout time.Duration `env:"BREAKER_OPEN_TIMEOUT" envDefault:"5m"`
 }
 
 // AuthConfig holds authentication settings.

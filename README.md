@@ -134,6 +134,10 @@ All values have defaults, so the server runs without any configuration.
 | `AUTH_ACCESS_TTL`         | `15m`         | Access-token lifetime            |
 | `AUTH_REFRESH_TTL`        | `168h`        | Refresh-token lifetime (7 days)  |
 | `AUTH_BCRYPT_COST`        | `12`          | bcrypt work factor for password hashing |
+| `QUOTA_DEFAULT_PLAN_CODE` | `basic`       | Plan applied when a user has no active subscription |
+| `QUOTA_BASIC_FALLBACK_LIMIT` | `10`       | Daily limit used if the plans table is unreachable |
+| `QUOTA_BREAKER_MAX_FAILURES` | `10`       | Consecutive Redis failures that trip the quota circuit breaker |
+| `QUOTA_BREAKER_OPEN_TIMEOUT` | `5m`       | How long the breaker stays open before a half-open probe |
 
 ## Database Migrations
 
@@ -160,8 +164,8 @@ make migrate-version                         # print the current version
 | GET    | `/auth/me`                | Bearer  | Get the authenticated user        |
 | GET    | `/users`                  | —       | List users                        |
 | GET    | `/users/:id`              | —       | Get a user by ID                  |
-| POST   | `/api/links`              | API key | Create a short link               |
-| GET    | `/api/links/:code/stats`  | API key | Click stats for a short link      |
+| POST   | `/api/links`              | JWT or API key | Create a short link (JWT → owned by user; subject to daily quota) |
+| GET    | `/api/links/:code/stats`  | JWT or API key | Click stats for a short link      |
 | GET    | `/:code`                  | —       | Redirect (302) to the original URL |
 
 ### URL shortener
@@ -181,6 +185,21 @@ curl localhost:8080/api/links/Ab3xY7q/stats -H 'X-API-Key: dev-key-1'
 ```
 
 Visiting an expired link returns `410 Gone`; an unknown code returns `404`.
+
+### Link ownership & daily quota
+
+`POST /api/links` accepts **either** a JWT (`Authorization: Bearer`) **or** an
+`X-API-Key`. With a JWT the link is owned by that user (`user_id`) and dedup is
+scoped per-owner; with an API key the link is unowned. The redirect endpoint
+stays public.
+
+Authenticated users have a daily creation quota from their subscription plan —
+the seeded **basic** plan allows **10 links/day** (resets at 00:00 UTC). The
+11th returns `429 QUOTA_EXCEEDED`. Reusing a URL you already shortened returns
+the existing link and does not consume quota. API-key (unowned) creation is not
+quota-limited. Quota uses Redis behind a circuit breaker, so a Redis outage
+fails open (links still created). Plans live in the `plans` table; a future
+billing system extends `plans`/`subscriptions` to sell higher-quota tiers.
 
 Responses use a uniform envelope:
 
