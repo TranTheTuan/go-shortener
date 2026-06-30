@@ -2,8 +2,8 @@
 
 **Project**: Go URL Shortener (`github.com/TranTheTuan/go-shortener`)  
 **Language**: Go 1.26  
-**Last Updated**: 2026-06-22  
-**Active Branch**: `feat/auth`
+**Last Updated**: 2026-06-30  
+**Active Branch**: `master` (Keycloak OIDC v1.1)
 
 ## Project Overview
 
@@ -60,7 +60,7 @@ go-shortener/
 │   └── router/                    # Route setup (1 file)
 │       └── router.go              # Echo wiring + route registration (72 lines)
 │
-├── pkg/                           # Reusable packages (8 files)
+├── pkg/                           # Reusable packages (9 files)
 │   ├── apperror/                  # Structured error type (85 lines)
 │   │   └── apperror.go            # Error type + constructors (BadRequest, NotFound, etc.)
 │   │
@@ -71,20 +71,21 @@ go-shortener/
 │   │   ├── postgres.go            # PostgreSQL connection setup (GORM)
 │   │   └── redis.go               # Redis client setup (go-redis)
 │   │
-│   ├── token/                     # JWT utilities (2 files + tests)
-│   │   ├── token.go               # JWT issuer + parser (HS256)
-│   │   └── token_test.go
+│   ├── keycloak/                  # Keycloak OIDC token validation (2 files + tests)
+│   │   ├── verifier.go            # go-oidc wrapper (RS256, lazy JWKS)
+│   │   └── verifier_test.go       # Token verification tests
 │   │
 │   └── shortcode/                 # Random code generation (2 files + tests)
 │       ├── shortcode.go           # Crypto-random base62 generator (35 lines)
 │       └── shortcode_test.go
 │
-├── migrations/                    # SQL migrations (10 files: 5 up + 5 down)
+├── migrations/                    # SQL migrations (12 files: 6 up + 6 down)
 │   ├── 000001_create_users_table.{up,down}.sql
 │   ├── 000002_create_links_table.{up,down}.sql
 │   ├── 000003_create_clicks_table.{up,down}.sql
-│   ├── 000004_add_user_credentials.{up,down}.sql      # Username + password
-│   └── 000005_create_refresh_tokens_table.{up,down}.sql # Auth tokens
+│   ├── 000004_add_user_credentials.{up,down}.sql      # Username (kept)
+│   ├── 000005_create_refresh_tokens_table.{up,down}.sql # Removed in 000009
+│   └── 000009_keycloak_auth.{up,down}.sql             # Add keycloak_sub, drop password_hash + refresh_tokens
 │
 ├── docs/                          # Documentation (Markdown, maintained)
 │   ├── README.md                  # Swagger/docs placeholder
@@ -280,40 +281,41 @@ Responsibility: HTTP request parsing, service invocation, response formatting.
 ---
 
 ### 9. Middleware
-**Files**: `internal/middleware/*.go` (2 middlewares + tests)
+**Files**: `internal/middleware/*.go` (1 middleware + tests)
 
 | Middleware | Purpose | Scope |
 |-----------|---------|-------|
-| `APIKey` | Validate X-API-Key header | `/api/*` routes (fail-closed) |
-| `JWT` | Parse Bearer token, extract user ID | Protected routes (auth, logout) |
+| `Keycloak` | Validate Bearer token (Keycloak-issued), JIT-provision user | Protected routes (`/api/*`, `/auth/me`, etc.) |
 
-**APIKey Middleware**:
-- Checks `X-API-Key` header
-- Fails closed: empty key set rejects all requests
-- Applied to link management (`/api/links`)
-
-**JWT Middleware**:
-- Parses Bearer token from Authorization header
-- Validates signature + expiry
-- Extracts user ID into context
-- Accessor: `UserIDFrom(c)` retrieves from context
+**Keycloak Middleware**:
+- Extracts Bearer token from Authorization header
+- Validates signature (RS256) + expiry + issuer + audience (optional)
+- Calls `UserService.SyncFromKeycloak` to get-or-create local user from Keycloak identity
+- Sets local user ID in context (downstream sees only int64 id, not Keycloak sub)
+- Accessor: `UserIDFrom(c)` retrieves local user ID from context
+- Returns 401 on invalid/expired/wrong-aud token; 500 on JIT DB error
 
 ---
 
-### 10. Token Management
-**Files**: `pkg/token/token.go`, `pkg/token/token_test.go`
+### 10. Keycloak Token Verification
+**Files**: `pkg/keycloak/verifier.go`, `pkg/keycloak/verifier_test.go`
 
-Responsibility: JWT issuance + parsing (HS256).
+Responsibility: Keycloak OIDC token validation (RS256, lazy JWKS fetching).
 
-**Key Type**: `Issuer`
-- Constructor: `NewIssuer(secret, ttl)`
-- Methods: `Issue(userID)` → signed token, `Parse(tokenString)` → claims
+**Key Type**: `TokenVerifier` interface
+- Constructor: `NewVerifier(cfg KeycloakConfig)` → wraps go-oidc
+- Methods: `Verify(ctx, rawToken)` → (*Identity, error)
 
-**JWT Details**:
-- Algorithm: HS256 (HMAC-SHA256)
-- Claims: user_id, exp (expiry), iat (issued at), iss (issuer)
-- Signing secret: `AUTH_JWT_SECRET` (required in production)
-- TTL: 15m (access token default)
+**Identity Struct**:
+- `Sub`: Keycloak subject UUID (unique user identifier)
+- `Email`: User email claim
+- `Username`: preferred_username claim
+
+**Verification Details**:
+- Algorithm: RS256 (HMAC signature, keys from Keycloak JWKS)
+- JWKS endpoint: In-cluster (lazy fetch, auto-refresh, cached)
+- Validates: signature, issuer (iss), expiry (exp), audience (aud, optional)
+- No startup block: JWKS fetched on first token validation
 
 ---
 
@@ -364,8 +366,7 @@ Migration 5: refresh_tokens table
 | `gorm.io/gorm` | v1.31.1 | ORM framework |
 | `gorm.io/driver/postgres` | v1.6.0 | PostgreSQL driver for GORM |
 | `github.com/redis/go-redis/v9` | v9.20.1 | Redis client |
-| `github.com/golang-jwt/jwt/v5` | v5.3.1 | JWT signing/parsing |
-| `golang.org/x/crypto` | v0.53.0 | bcrypt password hashing |
+| `github.com/coreos/go-oidc/v3` | v3.x | OIDC token validation (Keycloak) |
 | `github.com/caarlos0/env/v10` | v10.0.0 | Environment config parsing |
 | `github.com/swaggo/echo-swagger` | v1.5.2 | Swagger/OpenAPI UI |
 | `github.com/swaggo/swag` | v1.16.2 | Swagger code generation |
@@ -393,13 +394,10 @@ Migration 5: refresh_tokens table
 - ✅ Database migrations (manual control)
 - ✅ Error handling (structured apperror type)
 
-### In Progress (feat/auth branch)
-- 🔄 Username/password registration
-- 🔄 Email/password login with JWT tokens
-- 🔄 Token refresh with rotation
-- 🔄 Logout with token revocation
-- 🔄 User profile endpoint
-- 🔄 bcrypt password hashing
+### In Progress (Next: v1.2 role-based authorization)
+- 🔄 Keycloak realm roles mapping
+- 🔄 Admin endpoint authorization
+- 🔄 Fine-grained access control
 
 ### Future (Planned)
 - 📅 Rate limiting per API key
@@ -482,38 +480,39 @@ make migrate-create     # Create new migration
 
 | Concern | Implementation |
 |---------|-----------------|
-| **Passwords** | Bcrypt with cost=12 (slow, secure) |
-| **Tokens** | JWT HS256 (access) + random 32-byte (refresh) |
-| **API Keys** | X-API-Key header, fail-closed validation |
-| **Token storage** | Refresh tokens hashed (SHA256), never raw |
-| **Auth errors** | Generic "invalid credentials" (no user enumeration) |
-| **Input validation** | Username regex, email format, password length |
-| **Secrets** | Never logged; environment variables only |
+| **Passwords** | Delegated to Keycloak (not stored locally) |
+| **Tokens** | RS256 (Keycloak-issued, validated locally via JWKS) |
+| **JIT identity** | Keycloak sub → local user (get-or-create on first request) |
+| **Token validation** | Signature (RS256), expiry, issuer, audience (optional) |
+| **Auth errors** | Generic 401 (no user enumeration) |
+| **Claims** | Email + username from Keycloak claims (pre-validated) |
+| **Secrets** | Keycloak ISSUER/JWKS URLs in config; never tokens in logs |
 | **Database** | Parameterized queries via GORM (SQL injection safe) |
 
 ---
 
 ## Known Limitations
 
-1. **Single-instance**: No multi-instance token coordination
+1. **Single-instance**: No multi-instance token cache coordination
 2. **No custom codes**: All codes generated randomly
-3. **No link ownership**: All links public (auth adds user context)
-4. **No rate limiting**: Potential abuse vector
-5. **Async analytics loss**: Clicks not guaranteed (fire-and-forget)
-6. **No caching invalidation**: Expired links remain cached until TTL
+3. **No per-user rate limiting**: Quota fixed per plan (same for all users)
+4. **Async analytics loss**: Clicks not guaranteed (fire-and-forget)
+5. **No caching invalidation**: Expired links remain cached until TTL
+6. **Demo users orphaned**: Pre-migration users with null keycloak_sub won't map to Keycloak
 
 ---
 
 ## Next Steps
 
-1. **Complete v1.1** (feat/auth): Merge username/password auth
-2. **Add tests**: Increase coverage to >85% on all services
-3. **Deploy to staging**: Test migrations + performance
-4. **Implement v1.2**: Link management (delete, update, custom codes)
-5. **Add rate limiting** (v1.4): Protect against abuse
+1. **Deploy v1.1** (Keycloak OIDC): Staging + production rollout
+2. **Implement v1.2**: Role-based authorization (Keycloak realm roles)
+3. **Implement v1.3**: Link management (delete, update, custom codes)
+4. **Add rate limiting** (v1.5): Per-user quota enforcement
+5. **Observability** (v1.6): Prometheus metrics + Keycloak health checks
 
 ---
 
-**Last Updated**: 2026-06-22  
+**Last Updated**: 2026-06-30  
 **Maintainer**: @TranTheTuan  
-**License**: MIT
+**License**: MIT  
+**Auth Model**: Keycloak OIDC resource server (v1.1+)

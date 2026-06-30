@@ -24,7 +24,7 @@ go-shortener/
 │   ├── apperror/            # Structured error type
 │   ├── response/            # HTTP response helpers
 │   ├── database/            # DB connection factories
-│   ├── token/               # JWT utilities
+│   ├── keycloak/            # Keycloak OIDC token validation
 │   └── shortcode/           # Random code generation
 ├── configs/                 # Configuration loading
 ├── migrations/              # SQL migrations (*.up.sql / *.down.sql)
@@ -170,26 +170,37 @@ func NewUserService(repo UserRepository) UserService {
 
 ### Authentication Middleware
 
-**API Key middleware** (`middleware/api_key.go`):
-- Checks `X-API-Key` header against configured keys
-- Fails closed (empty key set rejects all requests)
-- Applied to routes that modify data (`POST /api/links`)
-
-**JWT middleware** (`middleware/jwt.go`):
-- Parses Bearer token from Authorization header
-- Extracts user ID into context
-- Applied to routes requiring authentication (`POST /auth/logout`, `GET /auth/me`)
+**Keycloak middleware** (`middleware/keycloak.go`):
+- Validates Bearer token via go-oidc (Keycloak-issued only)
+- Verifies token signature (RS256 via JWKS), expiry, issuer, audience (optional)
+- JIT-provisions Keycloak identity to local users table
+- Extracts local user ID into context (downstream handlers see only local id)
+- Applied to routes requiring authentication (`POST /api/links`, `GET /auth/me`, etc.)
 
 Example usage:
 ```go
 // In router setup
-auth := e.Group("/auth")
-auth.POST("/logout", h.Auth.Logout, appmw.JWT(issuer))
+api := e.Group("/api")
+api.Use(appmw.Keycloak(keycloakVerifier, userService))
+api.POST("/links", h.Link.Create)
 
 // In handler
-func (h *AuthHandler) Logout(c echo.Context) error {
-    userID := appmw.UserIDFrom(c)  // Extract from middleware
-    // ... logout logic
+func (h *LinkHandler) Create(c echo.Context) error {
+    userID := appmw.UserIDFrom(c)  // Extract local id (JIT-mapped from Keycloak sub)
+    // ... create link owned by userID
+}
+```
+
+**Token Verifier Interface** (`pkg/keycloak/verifier.go`):
+```go
+type Identity struct {
+    Sub      string // Keycloak subject (UUID)
+    Email    string // User email
+    Username string // preferred_username claim
+}
+
+type TokenVerifier interface {
+    Verify(ctx context.Context, rawToken string) (*Identity, error)
 }
 ```
 
@@ -294,8 +305,8 @@ type User struct {
 ### Environment Variables
 - Defined in `configs/config.go` with struct tags (`env:"VAR_NAME"`)
 - All variables have sensible defaults (fail-safe)
-- Secret variables (`AUTH_JWT_SECRET`) must be set in production
-- Namespace variables with prefixes: `SERVER_*`, `DB_*`, `SHORTENER_*`, `AUTH_*`
+- Keycloak variables (`KEYCLOAK_ISSUER`, `KEYCLOAK_JWKS_URL`) required outside development env
+- Namespace variables with prefixes: `SERVER_*`, `DB_*`, `SHORTENER_*`, `KEYCLOAK_*`, `QUOTA_*`
 
 ### Loading Config
 ```go
@@ -365,30 +376,21 @@ Configure via environment:
 - Database queries: no explicit timeout (relies on server timeout)
 - Graceful shutdown: 10s max
 
-## Security Best Practices
+### Token Handling (Keycloak-Delegated)
+- Access tokens: RS256-signed by Keycloak (validate signature + expiry + issuer + audience)
+- JIT provisioning: Keycloak `sub`/`email`/`preferred_username` → local user (get-or-create)
+- Token revocation: Managed by Keycloak (app doesn't track revocation separately)
+- JWKS fetching: In-cluster endpoint (lazy initialization, no startup block)
 
-### Password Storage
-- Use bcrypt with configurable work factor (default 12)
-- Never log raw passwords
-- Validate password strength (≥8 characters in auth service)
+### Input Validation (User Claims)
+- Email: From Keycloak token claim (assume pre-validated by Keycloak)
+- Username: From `preferred_username` claim
+- Keycloak Sub: Unique identifier (UUID, stored in `users.keycloak_sub`)
 
-### Token Handling
-- Access tokens: JWT HS256 (short-lived, 15m default)
-- Refresh tokens: Random 32-byte base64 (never raw in DB, SHA256 hash only)
-- Token rotation: Each refresh issues new refresh token
-- Revocation: Mark token as revoked in DB on logout
-
-### API Keys
-- Transmitted in `X-API-Key` header
-- Validated on every protected request
-- No expiry (rotate by changing config)
-- Can be empty (fail-closed; rejects all writes)
-
-### Input Validation
-- Email: basic format check + uniqueness in DB
-- Username: regex `^[a-zA-Z0-9_]{3,50}$` (prevent confusion, SQL injection)
-- Password: ≥8 characters
-- URL: no validation (user's responsibility)
+### Audience Validation
+- Optional (gated by `KEYCLOAK_CLIENT_ID` env var)
+- If set, Keycloak must have audience mapper to include backend client in `aud` claim
+- If not set, skip audience check (useful for testing or single-audience realms)
 
 ## Logging
 
@@ -414,6 +416,7 @@ slog.Debug("cache hit", "code", code)
 
 ---
 
-**Last Updated**: 2026-06-22  
+**Last Updated**: 2026-06-30  
 **Enforced**: Commit time (code reviews check standards)  
-**Flexibility**: Prioritize working code over lint perfection
+**Flexibility**: Prioritize working code over lint perfection  
+**Auth Model**: Keycloak OIDC resource server (no self-issued tokens)

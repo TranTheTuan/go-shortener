@@ -48,7 +48,6 @@ type createLinkResponse struct {
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Security     ApiKeyAuth
 // @Param        request  body      createLinkRequest   true  "URL to shorten (expires_at optional, RFC 3339)"
 // @Success      201      {object}  createLinkResponse
 // @Failure      400      {object}  response.Envelope   "invalid url or expiry"
@@ -61,8 +60,7 @@ func (h *LinkHandler) Create(c echo.Context) error {
 		return response.Error(c, apperror.BadRequest("invalid request body"))
 	}
 
-	// Stamp ownership when the caller authenticated with a JWT; API-key callers
-	// have no user and create unowned links.
+	// Stamp ownership from the authenticated user (set by the Keycloak middleware).
 	var owner *int64
 	if id, ok := appmw.UserIDFrom(c); ok {
 		owner = &id
@@ -107,11 +105,10 @@ func (h *LinkHandler) Create(c echo.Context) error {
 // @Description  Returns the total click count and the most recent clicks for a short link.
 // @Tags         links
 // @Produce      json
-// @Security     ApiKeyAuth
-// @Param        X-API-Key  header  string          true  "API key"
+// @Security     BearerAuth
 // @Param        code  path      string             true  "Short code"
 // @Success      200   {object}  service.LinkStats
-// @Failure      401   {object}  response.Envelope  "missing or invalid API key"
+// @Failure      401   {object}  response.Envelope  "missing or invalid token"
 // @Failure      404   {object}  response.Envelope  "short link not found"
 // @Router       /api/links/{code}/stats [get]
 func (h *LinkHandler) Stats(c echo.Context) error {

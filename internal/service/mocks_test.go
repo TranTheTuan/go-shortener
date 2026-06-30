@@ -61,22 +61,45 @@ func (m *mockLinkCacheRepository) Get(_ context.Context, code string) (*reposito
 // enforces unique username/email so Create can surface repository.ErrConflict.
 type mockUserRepo struct {
 	users  map[int64]*repository.User
+	subs   map[int64]*repository.Subscription // by user id, set by CreateWithSubscription
 	nextID int64
 }
 
 func newMockUserRepo() *mockUserRepo {
-	return &mockUserRepo{users: make(map[int64]*repository.User)}
+	return &mockUserRepo{users: make(map[int64]*repository.User), subs: make(map[int64]*repository.Subscription)}
+}
+
+func (m *mockUserRepo) conflicts(user *repository.User) bool {
+	for _, u := range m.users {
+		if u.Username == user.Username || u.Email == user.Email {
+			return true
+		}
+		if u.KeycloakSub != nil && user.KeycloakSub != nil && *u.KeycloakSub == *user.KeycloakSub {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *mockUserRepo) Create(_ context.Context, user *repository.User) (*repository.User, error) {
-	for _, u := range m.users {
-		if u.Username == user.Username || u.Email == user.Email {
-			return nil, repository.ErrConflict
-		}
+	if m.conflicts(user) {
+		return nil, repository.ErrConflict
 	}
 	m.nextID++
 	user.ID = m.nextID
 	m.users[user.ID] = user
+	return user, nil
+}
+
+func (m *mockUserRepo) CreateWithSubscription(_ context.Context, user *repository.User, sub *repository.Subscription) (*repository.User, error) {
+	if m.conflicts(user) {
+		return nil, repository.ErrConflict
+	}
+	m.nextID++
+	user.ID = m.nextID
+	m.users[user.ID] = user
+	sub.UserID = user.ID
+	m.subs[user.ID] = sub
 	return user, nil
 }
 
@@ -105,51 +128,26 @@ func (m *mockUserRepo) GetByUsername(_ context.Context, username string) (*repos
 	return nil, repository.ErrNotFound
 }
 
+func (m *mockUserRepo) GetByKeycloakSub(_ context.Context, sub string) (*repository.User, error) {
+	for _, u := range m.users {
+		if u.KeycloakSub != nil && *u.KeycloakSub == sub {
+			return u, nil
+		}
+	}
+	return nil, repository.ErrNotFound
+}
+
+func (m *mockUserRepo) Update(_ context.Context, user *repository.User) (*repository.User, error) {
+	m.users[user.ID] = user
+	return user, nil
+}
+
 func (m *mockUserRepo) List(_ context.Context) ([]*repository.User, error) {
 	out := make([]*repository.User, 0, len(m.users))
 	for _, u := range m.users {
 		out = append(out, u)
 	}
 	return out, nil
-}
-
-// mockRefreshRepo is an in-memory test double for repository.RefreshTokenRepository.
-type mockRefreshRepo struct {
-	byID   map[int64]*repository.RefreshToken
-	byHash map[string]*repository.RefreshToken
-	nextID int64
-}
-
-func newMockRefreshRepo() *mockRefreshRepo {
-	return &mockRefreshRepo{
-		byID:   make(map[int64]*repository.RefreshToken),
-		byHash: make(map[string]*repository.RefreshToken),
-	}
-}
-
-func (m *mockRefreshRepo) Create(_ context.Context, rt *repository.RefreshToken) (*repository.RefreshToken, error) {
-	m.nextID++
-	rt.ID = m.nextID
-	m.byID[rt.ID] = rt
-	m.byHash[rt.TokenHash] = rt
-	return rt, nil
-}
-
-func (m *mockRefreshRepo) GetByHash(_ context.Context, hash string) (*repository.RefreshToken, error) {
-	if rt, ok := m.byHash[hash]; ok {
-		return rt, nil
-	}
-	return nil, repository.ErrNotFound
-}
-
-func (m *mockRefreshRepo) Revoke(_ context.Context, id int64) (bool, error) {
-	rt, ok := m.byID[id]
-	if !ok || rt.RevokedAt != nil {
-		return false, nil
-	}
-	now := time.Now().UTC()
-	rt.RevokedAt = &now
-	return true, nil
 }
 
 // mockPlanRepo is a configurable test double for repository.PlanRepository.

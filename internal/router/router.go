@@ -12,15 +12,15 @@ import (
 	"github.com/TranTheTuan/go-shortener/internal/handler"
 	appmw "github.com/TranTheTuan/go-shortener/internal/middleware"
 	"github.com/TranTheTuan/go-shortener/internal/service"
-	"github.com/TranTheTuan/go-shortener/pkg/token"
+	"github.com/TranTheTuan/go-shortener/pkg/keycloak"
 )
 
 // Deps groups cross-cutting dependencies the router needs to build middleware.
 type Deps struct {
-	Issuer  *token.Issuer
-	APIKeys []string
-	Dedup   *service.DedupCache
-	Quota   service.QuotaService
+	Verifier keycloak.TokenVerifier
+	Users    service.UserService
+	Dedup    *service.DedupCache
+	Quota    service.QuotaService
 }
 
 // Handlers groups the application's HTTP handlers for registration.
@@ -54,25 +54,22 @@ func registerRoutes(e *echo.Echo, h Handlers, deps Deps) {
 	// Swagger UI (browse at /swagger/index.html).
 	e.GET("/swagger/*", echoSwagger.WrapHandler)
 
-	// Authentication. register/login/refresh/logout are public; /me requires a
-	// valid access token via the JWT middleware.
+	// Authentication is owned by Keycloak; this service only validates tokens.
+	keycloakMW := appmw.Keycloak(deps.Verifier, deps.Users)
+
+	// Current authenticated user (Keycloak token required).
 	auth := e.Group("/auth")
-	auth.POST("/register", h.Auth.Register)
-	auth.POST("/login", h.Auth.Login)
-	auth.POST("/refresh", h.Auth.Refresh)
-	auth.POST("/logout", h.Auth.Logout)
-	auth.GET("/me", h.Auth.Me, appmw.JWT(deps.Issuer))
+	auth.GET("/me", h.Auth.Me, keycloakMW)
 
 	// User lookups require authentication so the roster (usernames + emails) is
 	// not exposed anonymously.
-	users := e.Group("/users", appmw.JWT(deps.Issuer))
+	users := e.Group("/users", keycloakMW)
 	users.GET("", h.User.List)
 	users.GET("/:id", h.User.Get)
 
-	// Link management — authenticated by JWT or static API key. A JWT identifies
-	// the owner (links get a user_id); an API key authenticates without a user.
-	api := e.Group("/api")
-	api.Use(appmw.Authn(deps.Issuer, deps.APIKeys))
+	// Link management — authenticated by a Keycloak access token; the token's
+	// user owns the links and is subject to the daily quota.
+	api := e.Group("/api", keycloakMW)
 	links := api.Group("/links")
 	// Create chain: dedup fast-path → quota check → handler.
 	links.POST("", h.Link.Create, appmw.DuplicateURLCheck(deps.Dedup), appmw.QuotaCheck(deps.Quota))

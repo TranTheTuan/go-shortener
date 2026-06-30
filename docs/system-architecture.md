@@ -5,48 +5,54 @@
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                          HTTP Clients                           │
-│              (browsers, mobile apps, API clients)               │
+│  (browsers, mobile apps, API clients with Keycloak tokens)     │
 └──────────────────────────┬──────────────────────────────────────┘
-                           │ HTTP/HTTPS
+                           │ HTTP/HTTPS (with Authorization Bearer)
+                           │
+                    ┌──────▼──────┐
+                    │  Keycloak   │
+                    │  (auth.cd.me)
+                    │  OIDC Issuer│
+                    └──────┬──────┘
+                           │ JWKS (cached in-cluster)
 ┌──────────────────────────▼──────────────────────────────────────┐
 │                    Echo HTTP Server                             │
 │  ┌──────────────────────────────────────────────────────────┐  │
 │  │  Middleware (Request ID, Panic Recovery, Logging)       │  │
-│  │  - API Key Auth (X-API-Key header)                      │  │
-│  │  - JWT Auth (Authorization Bearer token)                │  │
+│  │  - Keycloak Auth (Bearer token validation + JIT prov.)  │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │                           │                                     │
 │  ┌────────────┬──────────┬──────┬──────┬──────────────────┐   │
 │  ▼            ▼          ▼      ▼      ▼                  ▼   │
 │ Health   AuthHandler  UserHandler LinkHandler  RedirectHandler  │
-│Handler   (login,      (list,get)  (create,     (/:code)        │
-│          register,               stats)                        │
-│          refresh,                                              │
-│          logout)                                               │
+│Handler   (/auth/me,   (list,get)  (create,     (/:code)        │
+│          returns              stats)                        │
+│          synced user)                                       │
 └──────────────────────────┬──────────────────────────────────────┘
                            │
         ┌──────────────────┼──────────────────┐
         │                  │                  │
         ▼                  ▼                  ▼
-   AuthService      LinkService         AnalyticsService
-   UserService      (cache-first)       (async recording)
+   UserService      LinkService         AnalyticsService
+   (sync from KC)   (cache-first)       (async recording)
         │                  │                  │
         │     ┌────────────┼────────────┐    │
         │     │            │            │    │
         ▼     ▼            ▼            ▼    ▼
-    UserRepo LinkRepo  LinkCacheRepo ClickRepo RefreshTokenRepo
-        │        │            │            │         │
-        │        │ Redis      │            │         │
-        │        │ (TTL)      │            │         │
-        │        └────────────┘            │         │
-        │                                  │         │
-        └──────────────────┬───────────────┴────────┘
+    UserRepo LinkRepo  LinkCacheRepo ClickRepo
+        │        │            │            │
+        │        │ Redis      │            │
+        │        │ (TTL)      │            │
+        │        └────────────┘            │
+        │                                  │
+        └──────────────────┬───────────────┘
                            │
             ┌──────────────┴──────────────┐
             ▼                             ▼
         PostgreSQL                    Redis
-        (users,links,clicks,      (link cache,
-        refresh_tokens)            key expiry)
+        (users w/                 (link cache,
+        keycloak_sub,             key expiry)
+        links, clicks)            
 ```
 
 ## Component Overview
@@ -104,9 +110,8 @@ Located in `internal/middleware/`:
 
 | Middleware | Purpose | Scope |
 |------------|---------|-------|
-| `APIKey` | Validates `X-API-Key` header | `/api/*` routes (write operations) |
-| `JWT` | Validates Bearer token, extracts user ID | `/auth/me`, `/auth/logout` |
-| Echo built-ins | Request ID, panic recovery | All routes |
+| `Keycloak` | Validates Bearer token (Keycloak-issued RS256), JIT-provisions user | `/api/*`, `/auth/me`, `/users/*` |
+| Echo built-ins | Request ID, panic recovery, logging | All routes |
 
 ## Data Flow Diagrams
 
@@ -184,84 +189,57 @@ RedirectHandler.Redirect
 **Performance**: Sub-100ms on cache hit  
 **Analytics**: Async click recording (acceptable loss)
 
-### 3. Login (POST /auth/login)
+### 3. Get User Profile (GET /auth/me)
 
 ```
-Client Request (email + password)
+Client Request (with Bearer token from Keycloak)
     │
     ▼
-AuthHandler.Login
+KeycloakMiddleware.Verify
     │
-    ├──► Parse JSON body
+    ├──► Extract Bearer token from Authorization header
     │
-    ├──► Call AuthService.Login(email, password)
-    │       │
-    │       ├──► Query UserRepository.GetByEmail(email)
-    │       │    └──► Not found: return "invalid credentials"
-    │       │
-    │       ├──► Verify password (bcrypt.CompareHashAndPassword)
-    │       │    └──► Mismatch: return "invalid credentials"
-    │       │
-    │       ├──► Generate access token (JWT HS256)
-    │       │    └──► Claims: user_id, exp (now + 15m), etc.
-    │       │
-    │       ├──► Generate refresh token (random 32-byte base64)
-    │       │
-    │       ├──► Hash refresh token (SHA256)
-    │       │
-    │       ├──► Store hash in refresh_tokens table
-    │       │    └──► expires_at = now + 7d
-    │       │
-    │       └──► Return {access_token, refresh_token, ...}
+    ├──► Validate signature (RS256 via JWKS)
+    │    └──► Invalid: return 401
     │
-    └──► Format response {"data": {access_token, refresh_token, ...}}
+    ├──► Validate expiry, issuer (iss), audience (aud)
+    │    └──► Invalid: return 401
+    │
+    ├──► Extract Identity (sub, email, preferred_username)
+    │
+    ├──► Call UserService.SyncFromKeycloak(Identity)
+    │       │
+    │       ├──► Query UserRepository.GetByKeycloakSub(sub)
+    │       │    ├──► Found: update email/username if changed, return existing user
+    │       │    └──► Not found: Create new user (get-or-create pattern)
+    │       │
+    │       └──► Return local User (int64 id)
+    │
+    ├──► Set local user ID in context
+    │
+    └──► Next handler
+        │
+        ▼
+    AuthHandler.Me
+        │
+        ├──► Extract local user ID from context
+        │
+        ├──► Format response {"data": {id, username, email, ...}}
 ```
 
-**Result**: HTTP 200 with token pair  
-**Security**: Password never logged; tokens not logged; hash stored (not raw)
-
-### 4. Refresh Token (POST /auth/refresh)
-
-```
-Client Request (refresh_token)
-    │
-    ▼
-AuthHandler.Refresh
-    │
-    ├──► Parse JSON body
-    │
-    ├──► Call AuthService.Refresh(refreshToken)
-    │       │
-    │       ├──► Hash token (SHA256)
-    │       │
-    │       ├──► Query RefreshTokenRepository.GetByHash(hash)
-    │       │    ├──► Not found: return "invalid token"
-    │       │    └──► Found but revoked: return "invalid token"
-    │       │
-    │       ├──► Check expiry (expires_at > now)
-    │       │    └──► Expired: return "invalid token"
-    │       │
-    │       ├──► Mark old token as revoked
-    │       │
-    │       ├──► Issue new access + refresh tokens (same as login)
-    │       │
-    │       └──► Return {new_access_token, new_refresh_token, ...}
-    │
-    └──► Format response {"data": {...}}
-```
-
-**Result**: HTTP 200 with new token pair  
-**Security**: Token rotation prevents token reuse; revocation prevents old token use
+**Result**: HTTP 200 with synced user details  
+**Security**: Password never stored; identity delegated to Keycloak  
+**JIT Provisioning**: User auto-created on first Keycloak request
 
 ## Database Schema
 
 ### users table
 ```sql
 id           BIGSERIAL PRIMARY KEY
-username     VARCHAR(50) UNIQUE NOT NULL (added migration 4)
+username     VARCHAR(50) UNIQUE NOT NULL
 email        VARCHAR(255) UNIQUE NOT NULL
-name         VARCHAR(255) (nullable, added migration 4)
-password_hash VARCHAR(255) NOT NULL (added migration 4)
+keycloak_sub VARCHAR(36) UNIQUE         (nullable for orphaned demo users; added migration 9)
+name         VARCHAR(255) (nullable)
 created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 ```
@@ -271,6 +249,7 @@ updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 id           BIGSERIAL PRIMARY KEY
 short_code   VARCHAR(16) UNIQUE NOT NULL
 original_url TEXT NOT NULL
+user_id      BIGINT NOT NULL FK→users(id) CASCADE
 expires_at   TIMESTAMPTZ (nullable)
 created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 ```
@@ -285,23 +264,13 @@ ip_address   VARCHAR(45)          (IPv6: 39 chars + safety)
 user_agent   TEXT
 ```
 
-### refresh_tokens table
-```sql
-id           BIGSERIAL PRIMARY KEY
-user_id      BIGINT NOT NULL FK→users(id) CASCADE
-token_hash   VARCHAR(64) UNIQUE NOT NULL
-expires_at   TIMESTAMPTZ NOT NULL
-revoked_at   TIMESTAMPTZ         (nullable; NULL = active)
-created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
-```
-
 **Indexes**:
 - `users(email)` — UNIQUE
 - `users(username)` — UNIQUE
+- `users(keycloak_sub)` — UNIQUE (added migration 9)
 - `links(short_code)` — UNIQUE
+- `links(user_id)` — FK relationship
 - `clicks(link_id)` — FK relationship
-- `refresh_tokens(token_hash)` — UNIQUE
-- `refresh_tokens(user_id)` — FK relationship
 
 ## Caching Strategy
 
@@ -333,52 +302,41 @@ created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 
 | Endpoint | Method | Requirement |
 |----------|--------|-------------|
-| POST /auth/register | Public | None (email/username validation only) |
-| POST /auth/login | Public | None |
-| POST /auth/refresh | Public | Valid refresh token |
-| POST /auth/logout | JWT | Valid access token |
-| GET /auth/me | JWT | Valid access token |
-| POST /api/links | API Key | Valid X-API-Key header |
-| GET /api/links/:code/stats | API Key | Valid X-API-Key header |
+| GET /auth/me | Keycloak JWT | Valid Keycloak access token (RS256) |
+| POST /api/links | Keycloak JWT | Valid Keycloak access token |
+| GET /api/links/:code/stats | Keycloak JWT | Valid Keycloak access token |
+| GET /users | Keycloak JWT | Valid Keycloak access token |
+| GET /users/:id | Keycloak JWT | Valid Keycloak access token |
 | GET /:code | Public | None |
+| GET /healthz | Public | None |
 
-### API Key Security
-- **Storage**: In-memory (from config, environment variable)
-- **Transmission**: `X-API-Key` header (case-insensitive)
-- **Validation**: Fail-closed (empty set rejects all requests)
-- **Rotation**: Change environment variable + restart
+### Keycloak OIDC Security
+- **Algorithm**: RS256 (RSA signatures, keys from Keycloak JWKS)
+- **JWKS endpoint**: In-cluster (e.g., `http://keycloak-svc.../certs`)
+- **Token issuer (iss)**: Public domain (e.g., `https://auth.cd.me/realms/<realm>`)
+- **Token expiry (exp)**: Validated on every request (short-lived, e.g., 5-10m)
+- **Audience (aud)**: Optional validation (requires audience mapper on Keycloak client)
+- **Lazy JWKS fetch**: First token triggers download; cached thereafter; app starts even if Keycloak briefly down
 
-Example config:
-```env
-SHORTENER_API_KEYS=dev-key-1,dev-key-2,prod-key-abc123
+### JIT Provisioning
+- **Model**: Get-or-create local user from Keycloak identity
+- **Key**: Keycloak `sub` (UUID, unique per realm)
+- **Attributes**: `email`, `preferred_username` from token claims (pre-validated by Keycloak)
+- **Orphaned demo users**: Pre-migration users have null `keycloak_sub` (won't map to Keycloak; acceptable for dev/template)
+
+### Identity Flow
 ```
-
-### JWT Security
-- **Algorithm**: HS256 (HMAC-SHA256)
-- **Secret**: `AUTH_JWT_SECRET` (required in production)
-- **Signing**: Server signs all tokens
-- **Verification**: Echo JWT middleware validates on protected routes
-- **Access token TTL**: 15m (short-lived, revocation not needed)
-- **Refresh token TTL**: 7d (stored in DB, revocable)
-
-### Password Security
-- **Hashing**: bcrypt (cost factor = 12, configurable)
-- **Storage**: `password_hash` in users table (never raw password)
-- **Verification**: bcrypt.CompareHashAndPassword (timing-safe)
-- **Rotation**: Only via explicit password change (not implemented yet)
-
-### Token Storage
-- **Access tokens**: Not stored (ephemeral, JWT carries identity)
-- **Refresh tokens**: Stored as SHA256 hash (raw token never persisted)
-- **Raw token location**: Only in client memory (on login response)
+Keycloak sub (UUID) ──► users.keycloak_sub (UNIQUE, JIT get-or-create) ──► local int64 user_id
+```
+Downstream (link ownership, quota) sees only int64 user_id; Keycloak identity abstracted away.
 
 ### Input Validation
 
 | Field | Rule | Purpose |
 |-------|------|---------|
-| username | `^[a-zA-Z0-9_]{3,50}$` | Prevent confusion, limit injection surface |
-| email | Basic format check + UNIQUE | Standard email validation |
-| password | ≥8 characters | Prevent weak passwords |
+| email | From Keycloak claim | Pre-validated by Keycloak (assume trusted) |
+| username | From `preferred_username` claim | Pre-validated by Keycloak |
+| keycloak_sub | UUID from `sub` claim | Unique Keycloak identity |
 | url | No validation | User's responsibility (we just store) |
 
 ## Performance Characteristics
@@ -394,9 +352,9 @@ SHORTENER_API_KEYS=dev-key-1,dev-key-2,prod-key-abc123
 - **Bottleneck**: Database write
 
 ### Auth Operations Performance
-- **Login**: ~50-100ms (bcrypt is intentionally slow; cost=12)
-- **Refresh**: ~20-50ms (token generation + DB write)
-- **Logout**: ~10-30ms (DB update)
+- **Token validation**: ~5-20ms (JWKS cached locally, signature check only)
+- **JIT provisioning**: ~10-50ms (get-or-create user DB lookup)
+- **GET /auth/me**: ~20-60ms (token validation + user lookup)
 
 ### Database Connection Pooling
 - **Max open connections**: 25 (default, configurable)
@@ -458,12 +416,14 @@ Clients → Load Balancer → [Echo 1, Echo 2, ...]
 ### Metrics (Not Built-in)
 Future enhancements:
 - Prometheus metrics (request count, latency histograms)
-- Request rate per API key
+- Request rate per user
 - Cache hit ratio
 - Database query latency
+- Keycloak token validation latency
 
 ---
 
-**Last Updated**: 2026-06-22  
+**Last Updated**: 2026-06-30  
 **Diagrams**: ASCII for documentation clarity  
-**Status**: Production-ready single-instance architecture
+**Status**: Production-ready single-instance architecture  
+**Auth Model**: Keycloak OIDC resource server (v1.1+)
