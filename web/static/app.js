@@ -102,7 +102,7 @@ function wireCreateForm(api) {
       return;
     }
 
-    if (res.status === 201) {
+    if (res.ok && json.data?.short_url) {
       showCreated(json.data.short_url);
     } else if (res.status === 429) {
       text("result", "Daily quota exceeded — try again tomorrow.");
