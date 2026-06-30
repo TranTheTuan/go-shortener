@@ -13,6 +13,7 @@ import (
 	appmw "github.com/TranTheTuan/go-shortener/internal/middleware"
 	"github.com/TranTheTuan/go-shortener/internal/service"
 	"github.com/TranTheTuan/go-shortener/pkg/keycloak"
+	"github.com/TranTheTuan/go-shortener/web"
 )
 
 // Deps groups cross-cutting dependencies the router needs to build middleware.
@@ -30,6 +31,7 @@ type Handlers struct {
 	Link     *handler.LinkHandler
 	Redirect *handler.RedirectHandler
 	Auth     *handler.AuthHandler
+	Frontend *handler.FrontendHandler
 }
 
 // New builds a configured Echo instance with middleware and all routes. Deps
@@ -53,6 +55,13 @@ func registerRoutes(e *echo.Echo, h Handlers, deps Deps) {
 
 	// Swagger UI (browse at /swagger/index.html).
 	e.GET("/swagger/*", echoSwagger.WrapHandler)
+
+	// Frontend SPA (embedded). Specific routes registered before the /:code
+	// catch-all so they take precedence; index.html also receives the OIDC
+	// callback query, which keycloak-js parses client-side.
+	e.FileFS("/", "index.html", web.Files)
+	e.StaticFS("/static", echo.MustSubFS(web.Files, "static"))
+	e.GET("/app-config.json", h.Frontend.Config)
 
 	// Authentication is owned by Keycloak; this service only validates tokens.
 	keycloakMW := appmw.Keycloak(deps.Verifier, deps.Users)

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Go URL Shortener</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <main class="card">
+    <h1>Go URL Shortener</h1>
+    <p id="status" class="muted">Loading…</p>
+
+    <!-- Signed-out view -->
+    <section id="signed-out" hidden>
+      <p>Sign in with Keycloak to create short links.</p>
+      <button id="signin" class="primary">Sign in</button>
+    </section>
+
+    <!-- Signed-in view -->
+    <section id="signed-in" hidden>
+      <p id="greeting" class="muted"></p>
+
+      <form id="create-form">
+        <label for="url">URL to shorten</label>
+        <input id="url" type="url" placeholder="https://example.com" required />
+        <label for="expires">Expires at (optional)</label>
+        <input id="expires" type="datetime-local" />
+        <button class="primary" type="submit">Create short link</button>
+      </form>
+      <p id="result" class="result"></p>
+
+      <hr />
+
+      <form id="stats-form">
+        <label for="code">Look up click stats by short code</label>
+        <div class="row">
+          <input id="code" type="text" placeholder="Ab3xY7q" />
+          <button type="submit">Get stats</button>
+        </div>
+      </form>
+      <p id="stats-result" class="result"></p>
+
+      <button id="signout" class="link" hidden>Sign out</button>
+    </section>
+  </main>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

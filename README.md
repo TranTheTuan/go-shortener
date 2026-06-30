@@ -234,6 +234,27 @@ and quota key on that local user.
 - The backend client needs the `email` + `profile` scopes (the app stores `email` and `preferred_username`).
 - Set `KEYCLOAK_CLIENT_ID` to bind tokens to your client: the token must carry it in `aud` **or** `azp`. Keycloak sets `azp` to the requesting client by default, so this works out of the box — no audience mapper required (add one only if you prefer matching on `aud`). Leave it empty to skip the check.
 
+## Frontend
+
+A minimal vanilla (no build step) single-page frontend lives in [`web/`](web/) and is
+**embedded into the binary** (`go:embed`) and served by the Go server at the same
+origin as the API — so there is no separate deploy and no API CORS:
+
+| Route | Serves |
+| ----- | ------ |
+| `/` | `web/index.html` (also receives the OIDC callback) |
+| `/static/*` | `web/static/` assets (`app.js`, `styles.css`, vendored `keycloak.js`) |
+| `/app-config.json` | `{authUrl, realm, clientId}` derived from `KEYCLOAK_*` env (no hardcoding) |
+
+It signs in with **keycloak-js** (Authorization Code + PKCE), then calls the API
+with the access token. MVP: sign in/out, show profile, create + copy a short link,
+and look up click stats by code. Open `http://localhost:8080/` after `make run`.
+
+**Keycloak client setup** (reuses the same `go-shortener` public client as the backend):
+- Enable *Standard flow* + PKCE (S256); it's a public client.
+- Add the Go server origin to **Valid redirect URIs** (e.g. `http://localhost:8080/*`, your prod URL) and **Web origins** (the origin).
+- The vendored `web/static/keycloak.js` should match your Keycloak server's major version (currently v26).
+
 ## Make Targets
 
 Run `make help` to list all targets:
