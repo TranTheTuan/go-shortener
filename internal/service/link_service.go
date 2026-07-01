@@ -15,6 +15,27 @@ import (
 const maxCodeGenAttempts = 5
 const defaultCodeLength = 7
 
+// Pagination bounds for listing a user's links.
+const (
+	defaultPageLimit = 20
+	maxPageLimit     = 100
+)
+
+// ClampPaging normalizes pagination params — limit to [1,100] (default 20 when
+// non-positive), offset to >= 0 — so callers echo the same applied values.
+func ClampPaging(limit, offset int) (int, int) {
+	if limit <= 0 {
+		limit = defaultPageLimit
+	}
+	if limit > maxPageLimit {
+		limit = maxPageLimit
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return limit, offset
+}
+
 // CreateLinkInput carries the data required to create a short link.
 type CreateLinkInput struct {
 	URL       string
@@ -33,6 +54,9 @@ type LinkService interface {
 	// rather than creating a new row — the quota layer uses this to refund.
 	Create(ctx context.Context, in CreateLinkInput) (*repository.Link, bool, error)
 	Resolve(ctx context.Context, code string) (*repository.Link, error)
+	// ListByOwner returns a page of the user's links (with click counts) and the
+	// total count. limit/offset are clamped via ClampPaging.
+	ListByOwner(ctx context.Context, ownerID int64, limit, offset int) ([]*repository.OwnedLink, int64, error)
 }
 
 type linkService struct {
@@ -132,6 +156,22 @@ func (s *linkService) Resolve(ctx context.Context, code string) (*repository.Lin
 
 	s.cacheSet(ctx, link)
 	return link, nil
+}
+
+// ListByOwner returns a clamped page of the owner's links (with click counts)
+// plus the total number of links they own.
+func (s *linkService) ListByOwner(ctx context.Context, ownerID int64, limit, offset int) ([]*repository.OwnedLink, int64, error) {
+	limit, offset = ClampPaging(limit, offset)
+
+	items, err := s.repo.ListByOwner(ctx, ownerID, limit, offset)
+	if err != nil {
+		return nil, 0, apperror.Internal(err)
+	}
+	total, err := s.repo.CountByOwner(ctx, ownerID)
+	if err != nil {
+		return nil, 0, apperror.Internal(err)
+	}
+	return items, total, nil
 }
 
 // cacheTTLFor computes the Redis TTL for a link.

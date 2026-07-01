@@ -41,6 +41,24 @@
       </form>
       <p id="stats-result" class="result"></p>
 
+      <hr />
+
+      <section id="links">
+        <h2>My links</h2>
+        <p id="links-status" class="muted"></p>
+        <table id="links-table" hidden>
+          <thead>
+            <tr><th>Short</th><th>Original</th><th>Clicks</th><th>Created</th><th>Expires</th></tr>
+          </thead>
+          <tbody id="links-body"></tbody>
+        </table>
+        <div id="links-pager" class="row" hidden>
+          <button id="prev" type="button">Prev</button>
+          <span id="page-info" class="muted"></span>
+          <button id="next" type="button">Next</button>
+        </div>
+      </section>
+
       <button id="signout" class="link" hidden>Sign out</button>
     </section>
   </main>

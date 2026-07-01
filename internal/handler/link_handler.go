@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -97,6 +98,75 @@ func (h *LinkHandler) Create(c echo.Context) error {
 		OriginalURL: link.OriginalURL,
 		ExpiresAt:   link.ExpiresAt,
 	})
+}
+
+// linkListItem is one row in the owner's links list.
+type linkListItem struct {
+	ShortCode   string     `json:"short_code"`
+	ShortURL    string     `json:"short_url"`
+	OriginalURL string     `json:"original_url"`
+	CreatedAt   time.Time  `json:"created_at"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+	TotalClicks int64      `json:"total_clicks"`
+}
+
+// listResponse is the paginated payload for GET /api/links.
+type listResponse struct {
+	Items  []linkListItem `json:"items"`
+	Limit  int            `json:"limit"`
+	Offset int            `json:"offset"`
+	Total  int64          `json:"total"`
+}
+
+// List handles GET /api/links — the authenticated user's own links, paginated,
+// each with its click count.
+//
+// @Summary      List the authenticated user's links
+// @Tags         links
+// @Produce      json
+// @Security     BearerAuth
+// @Param        limit   query     int  false  "Page size (default 20, max 100)"
+// @Param        offset  query     int  false  "Offset into the result set (default 0)"
+// @Success      200     {object}  listResponse
+// @Failure      401     {object}  response.Envelope  "missing or invalid token"
+// @Router       /api/links [get]
+func (h *LinkHandler) List(c echo.Context) error {
+	owner, ok := appmw.UserIDFrom(c)
+	if !ok {
+		return response.Error(c, apperror.New(http.StatusUnauthorized, "UNAUTHORIZED", "not authenticated"))
+	}
+
+	limit, offset := service.ClampPaging(atoiDefault(c.QueryParam("limit"), 0), atoiDefault(c.QueryParam("offset"), 0))
+
+	items, total, err := h.links.ListByOwner(c.Request().Context(), owner, limit, offset)
+	if err != nil {
+		return response.Error(c, err)
+	}
+
+	out := make([]linkListItem, 0, len(items))
+	for _, it := range items {
+		out = append(out, linkListItem{
+			ShortCode:   it.ShortCode,
+			ShortURL:    h.baseURL + "/" + it.ShortCode,
+			OriginalURL: it.OriginalURL,
+			CreatedAt:   it.CreatedAt,
+			ExpiresAt:   it.ExpiresAt,
+			TotalClicks: it.TotalClicks,
+		})
+	}
+
+	return response.Success(c, http.StatusOK, listResponse{Items: out, Limit: limit, Offset: offset, Total: total})
+}
+
+// atoiDefault parses s as an int, returning def when empty or invalid.
+func atoiDefault(s string, def int) int {
+	if s == "" {
+		return def
+	}
+	if n, err := strconv.Atoi(s); err == nil {
+		return n
+	}
+	return def
 }
 
 // Stats handles GET /api/links/:code/stats.

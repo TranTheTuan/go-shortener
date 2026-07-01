@@ -85,6 +85,7 @@ func registerRoutes(e *echo.Echo, h Handlers, deps Deps) {
 	links := api.Group("/links")
 	// Create chain: dedup fast-path → quota check → handler.
 	links.POST("", h.Link.Create, appmw.DuplicateURLCheck(deps.Dedup), appmw.QuotaCheck(deps.Quota))
+	links.GET("", h.Link.List)
 	links.GET("/:code/stats", h.Link.Stats)
 
 	// Public redirect. Registered last; Echo prioritizes the static /healthz,

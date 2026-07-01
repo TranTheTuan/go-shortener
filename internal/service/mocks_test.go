@@ -12,7 +12,23 @@ type mockLinkRepo struct {
 	createFn           func(ctx context.Context, link *repository.Link) (*repository.Link, error)
 	getByCodeFn        func(ctx context.Context, code string) (*repository.Link, error)
 	getByOwnerAndURLFn func(ctx context.Context, ownerID *int64, url string) (*repository.Link, error)
+	listByOwnerFn      func(ctx context.Context, ownerID int64, limit, offset int) ([]*repository.OwnedLink, error)
+	countByOwnerFn     func(ctx context.Context, ownerID int64) (int64, error)
 	createCalls        int
+}
+
+func (m *mockLinkRepo) ListByOwner(ctx context.Context, ownerID int64, limit, offset int) ([]*repository.OwnedLink, error) {
+	if m.listByOwnerFn != nil {
+		return m.listByOwnerFn(ctx, ownerID, limit, offset)
+	}
+	return nil, nil
+}
+
+func (m *mockLinkRepo) CountByOwner(ctx context.Context, ownerID int64) (int64, error) {
+	if m.countByOwnerFn != nil {
+		return m.countByOwnerFn(ctx, ownerID)
+	}
+	return 0, nil
 }
 
 func (m *mockLinkRepo) Create(ctx context.Context, link *repository.Link) (*repository.Link, error) {

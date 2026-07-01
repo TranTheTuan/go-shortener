@@ -19,6 +19,12 @@ type Link struct {
 	CreatedAt   time.Time  `json:"created_at"`
 }
 
+// OwnedLink is a link plus its click count, used by the owner's list view.
+type OwnedLink struct {
+	Link
+	TotalClicks int64 `json:"total_clicks"`
+}
+
 // LinkRepository defines the persistence operations for short links.
 type LinkRepository interface {
 	Create(ctx context.Context, link *Link) (*Link, error)
@@ -26,6 +32,11 @@ type LinkRepository interface {
 	// GetByOwnerAndURL finds a link for the given URL scoped to one owner.
 	// ownerID nil matches the unowned (API-key) group.
 	GetByOwnerAndURL(ctx context.Context, ownerID *int64, url string) (*Link, error)
+	// ListByOwner returns the owner's links (newest first) with their click
+	// counts, paginated by limit/offset.
+	ListByOwner(ctx context.Context, ownerID int64, limit, offset int) ([]*OwnedLink, error)
+	// CountByOwner returns the total number of links owned by the user.
+	CountByOwner(ctx context.Context, ownerID int64) (int64, error)
 }
 
 // linkRepository is the GORM-backed LinkRepository.
@@ -60,6 +71,32 @@ func (r *linkRepository) GetByCode(ctx context.Context, code string) (*Link, err
 		return nil, err
 	}
 	return &link, nil
+}
+
+// ListByOwner returns the owner's links, newest first, each with its click
+// count (LEFT JOIN so click-less links report 0), paginated by limit/offset.
+func (r *linkRepository) ListByOwner(ctx context.Context, ownerID int64, limit, offset int) ([]*OwnedLink, error) {
+	var out []*OwnedLink
+	err := r.db.WithContext(ctx).
+		Model(&Link{}).
+		Select("links.*, COUNT(clicks.id) AS total_clicks").
+		Joins("LEFT JOIN clicks ON clicks.link_id = links.id").
+		Where("links.user_id = ?", ownerID).
+		Group("links.id").
+		Order("links.created_at DESC").
+		Limit(limit).Offset(offset).
+		Scan(&out).Error
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// CountByOwner returns the total number of links owned by the user.
+func (r *linkRepository) CountByOwner(ctx context.Context, ownerID int64) (int64, error) {
+	var n int64
+	err := r.db.WithContext(ctx).Model(&Link{}).Where("user_id = ?", ownerID).Count(&n).Error
+	return n, err
 }
 
 // GetByOwnerAndURL returns the owner's link for the given original URL, or
