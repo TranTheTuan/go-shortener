@@ -45,6 +45,9 @@ func New(h Handlers, deps Deps) *echo.Echo {
 	e.Use(middleware.RequestID())
 	// e.Use(middleware.RequestLogger())
 	e.Use(middleware.Recover())
+	// Adds ETag + Cache-Control to the embedded SPA so unchanged assets 304 and
+	// new deploys are picked up immediately (embed.FS has no modtime of its own).
+	e.Use(appmw.FrontendCache(web.Files))
 
 	registerRoutes(e, h, deps)
 	return e
