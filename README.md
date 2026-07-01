@@ -161,6 +161,7 @@ make migrate-version                         # print the current version
 | GET    | `/users`                  | Keycloak JWT | List users                    |
 | GET    | `/users/:id`              | Keycloak JWT | Get a user by ID              |
 | POST   | `/api/links`              | Keycloak JWT | Create a short link (owned by the token's user; subject to daily quota) |
+| GET    | `/api/links`              | Keycloak JWT | List the caller's links (paginated `?limit=&offset=`, with click counts) |
 | GET    | `/api/links/:code/stats`  | Keycloak JWT | Click stats for a short link  |
 | GET    | `/:code`                  | —       | Redirect (302) to the original URL |
 
@@ -248,7 +249,8 @@ origin as the API — so there is no separate deploy and no API CORS:
 
 It signs in with **keycloak-js** (Authorization Code + PKCE), then calls the API
 with the access token. MVP: sign in/out, show profile, create + copy a short link,
-and look up click stats by code. Open `http://localhost:8080/` after `make run`.
+a paginated **"My links"** list (with per-link click counts), and a stats lookup by
+code. Open `http://localhost:8080/` after `make run`.
 
 **Keycloak client setup** (reuses the same `go-shortener` public client as the backend):
 - Enable *Standard flow* + PKCE (S256); it's a public client.

@@ -84,3 +84,31 @@ button.link {
 .result { margin-top: 0.75rem; word-break: break-all; min-height: 1.25rem; }
 .result a { color: var(--primary); }
 .result button { margin-left: 0.5rem; padding: 0.25rem 0.6rem; }
+
+#links h2 { font-size: 1.05rem; margin: 0 0 0.5rem; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  table-layout: fixed;
+}
+th, td {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+th { color: var(--muted); font-weight: 600; }
+td a { color: var(--primary); word-break: break-all; }
+td button { margin-left: 0.35rem; padding: 0.15rem 0.4rem; font-size: 0.75rem; }
+
+.truncate {
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#links-pager { align-items: center; justify-content: space-between; margin-top: 0.75rem; }
+#links-pager button:disabled { opacity: 0.4; cursor: default; }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -308,4 +309,49 @@ func TestLinkService_Resolve_CacheMissBackfillsCache(t *testing.T) {
 	if cached := cache.store["abc1234"]; cached == nil || cached.OriginalURL != "https://example.com" {
 		t.Errorf("cached url = %v, want https://example.com", cached)
 	}
+}
+
+func TestLinkService_ListByOwner_ClampsAndReturnsTotal(t *testing.T) {
+	var gotLimit, gotOffset int
+	repo := &mockLinkRepo{
+		listByOwnerFn: func(_ context.Context, _ int64, limit, offset int) ([]*repository.OwnedLink, error) {
+			gotLimit, gotOffset = limit, offset
+			return []*repository.OwnedLink{{Link: repository.Link{ID: 1, ShortCode: "abc1234"}, TotalClicks: 3}}, nil
+		},
+		countByOwnerFn: func(_ context.Context, _ int64) (int64, error) { return 42, nil },
+	}
+	svc := NewLinkService(repo, nil, 7, 0)
+
+	cases := []struct{ inLimit, inOffset, wantLimit, wantOffset int }{
+		{0, 0, 20, 0},     // non-positive limit → default
+		{500, -5, 100, 0}, // over-max limit → 100; negative offset → 0
+		{50, 10, 50, 10},  // in-range pass-through
+	}
+	for _, tc := range cases {
+		items, total, err := svc.ListByOwner(context.Background(), 7, tc.inLimit, tc.inOffset)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if gotLimit != tc.wantLimit || gotOffset != tc.wantOffset {
+			t.Errorf("in(%d,%d): applied (%d,%d), want (%d,%d)", tc.inLimit, tc.inOffset, gotLimit, gotOffset, tc.wantLimit, tc.wantOffset)
+		}
+		if total != 42 {
+			t.Errorf("total = %d, want 42", total)
+		}
+		if len(items) != 1 || items[0].TotalClicks != 3 {
+			t.Errorf("items = %+v", items)
+		}
+	}
+}
+
+func TestLinkService_ListByOwner_RepoError(t *testing.T) {
+	repo := &mockLinkRepo{
+		listByOwnerFn: func(_ context.Context, _ int64, _, _ int) ([]*repository.OwnedLink, error) {
+			return nil, errors.New("db down")
+		},
+	}
+	svc := NewLinkService(repo, nil, 7, 0)
+
+	_, _, err := svc.ListByOwner(context.Background(), 7, 20, 0)
+	wantStatus(t, err, http.StatusInternalServerError)
 }
