@@ -33,6 +33,9 @@ type appConfig struct {
 
 // Config handles GET /app-config.json.
 func (h *FrontendHandler) Config(c echo.Context) error {
+	// Runtime config must never go stale: it drives Keycloak auth and changes on
+	// redeploy. no-cache forces revalidation while still allowing a 304.
+	c.Response().Header().Set("Cache-Control", "no-cache")
 	return c.JSON(http.StatusOK, appConfig{
 		AuthURL:  h.authURL,
 		Realm:    h.realm,
