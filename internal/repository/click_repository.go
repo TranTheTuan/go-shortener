@@ -21,6 +21,7 @@ type Click struct {
 // ClickRepository defines the persistence operations for click events.
 type ClickRepository interface {
 	Create(ctx context.Context, click *Click) error
+	CreateBatch(ctx context.Context, clicks []*Click) error
 	CountByLinkID(ctx context.Context, linkID int64) (int64, error)
 	ListByLinkID(ctx context.Context, linkID int64, limit int) ([]*Click, error)
 }
@@ -38,6 +39,14 @@ func NewClickRepository(db *gorm.DB) ClickRepository {
 // Create inserts a single click event.
 func (r *clickRepository) Create(ctx context.Context, click *Click) error {
 	return r.db.WithContext(ctx).Create(click).Error
+}
+
+// CreateBatch bulk-inserts click events in chunks of 500.
+func (r *clickRepository) CreateBatch(ctx context.Context, clicks []*Click) error {
+	if len(clicks) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).CreateInBatches(clicks, 500).Error
 }
 
 // CountByLinkID returns the total number of clicks for a link.

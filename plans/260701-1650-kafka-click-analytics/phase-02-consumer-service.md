@@ -28,13 +28,16 @@
        batchSize int
        interval  time.Duration
    }
-   func NewClickConsumer(brokers []string, topic, group string, clicks repository.ClickRepository, batchSize int, interval time.Duration) (*ClickConsumer, error) {
-       cl, err := kgo.NewClient(
-           kgo.SeedBrokers(brokers...),
-           kgo.ConsumerGroup(group),
-           kgo.ConsumeTopics(topic),
+   func NewClickConsumer(cfg configs.KafkaConfig, clicks repository.ClickRepository) (*ClickConsumer, error) {
+       // Reuse buildKGOOpts from click_producer.go for TLS + SASL (same config).
+       opts := append(
+           buildKGOOpts(cfg),
+           kgo.SeedBrokers(cfg.Brokers...),
+           kgo.ConsumerGroup(cfg.ConsumerGroup),
+           kgo.ConsumeTopics(cfg.ClickTopic),
            kgo.DisableAutoCommit(), // manual commit AFTER insert = at-least-once
        )
+       cl, err := kgo.NewClient(opts...)
        ...
    }
    // Run polls fetches, accumulates decoded clicks, flushes on batchSize or interval,
@@ -47,7 +50,7 @@
 3. **`cmd/click-consumer/main.go`** — mirror `cmd/server/main.go`'s bootstrap:
    - `configs.Load()`; require `cfg.Kafka.Enabled()` (else fatal "consumer needs KAFKA_BROKERS").
    - `database.NewPostgres(cfg.Database...)` → `repository.NewClickRepository(db)`.
-   - `NewClickConsumer(cfg.Kafka.Brokers, cfg.Kafka.ClickTopic, cfg.Kafka.ConsumerGroup, clickRepo, cfg.Kafka.BatchSize, cfg.Kafka.BatchInterval)`.
+   - `NewClickConsumer(cfg.Kafka, clickRepo)`.
    - `signal.NotifyContext(SIGINT,SIGTERM)` → `consumer.Run(ctx)`; graceful shutdown flushes the buffer + closes the client.
 
 4. `go build ./...`.

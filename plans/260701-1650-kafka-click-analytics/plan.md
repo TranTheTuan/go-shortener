@@ -31,9 +31,10 @@ both binaries (monorepo). Producer/consumer behind small interfaces for testing.
 
 ## Key Dependencies
 
-- `github.com/twmb/franz-go` (kgo) — producer + consumer group
+- `github.com/twmb/franz-go/pkg/kgo` — producer + consumer group (pure Go, no CGO)
+- `github.com/twmb/franz-go/pkg/sasl/scram` — SCRAM-SHA-256 SASL auth (pure Go)
 - Existing: GORM/Postgres (`clicks` table), Echo redirect handler, `configs`
-- Kafka brokers provided via `KAFKA_BROKERS` env (cluster already running)
+- Kafka cluster: `kafka{1,2,3}.tonytran.xyz:9093` (SASL_SSL, SCRAM-SHA-256)
 
 ## Definition of Done
 

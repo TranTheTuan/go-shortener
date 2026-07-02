@@ -1,25 +1,25 @@
 package handler
 
 import (
-	"context"
-	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/labstack/echo/v4"
 
+	"github.com/TranTheTuan/go-shortener/internal/events"
 	"github.com/TranTheTuan/go-shortener/internal/service"
 	"github.com/TranTheTuan/go-shortener/pkg/response"
 )
 
 // RedirectHandler serves the public short-link redirect endpoint.
 type RedirectHandler struct {
-	links     service.LinkService
-	analytics service.AnalyticsService
+	links  service.LinkService
+	clicks events.ClickProducer
 }
 
 // NewRedirectHandler wires a RedirectHandler to its services.
-func NewRedirectHandler(links service.LinkService, analytics service.AnalyticsService) *RedirectHandler {
-	return &RedirectHandler{links: links, analytics: analytics}
+func NewRedirectHandler(links service.LinkService, clicks events.ClickProducer) *RedirectHandler {
+	return &RedirectHandler{links: links, clicks: clicks}
 }
 
 // Redirect handles GET /:code. It resolves the code to its original URL and
@@ -41,19 +41,13 @@ func (h *RedirectHandler) Redirect(c echo.Context) error {
 		return response.Error(c, err) // 404 / 410 / 500
 	}
 
-	// Capture request data before the goroutine — the echo.Context must not be
-	// touched once the handler returns.
-	in := service.RecordInput{
+	h.clicks.Publish(events.ClickEvent{
 		LinkID:    link.ID,
+		ClickedAt: time.Now().UTC(),
 		Referrer:  c.Request().Referer(),
 		IPAddress: c.RealIP(),
 		UserAgent: c.Request().UserAgent(),
-	}
-	go func() {
-		if err := h.analytics.Record(context.Background(), in); err != nil {
-			slog.Error("record click failed", "link_id", in.LinkID, "error", err)
-		}
-	}()
+	})
 
 	return c.Redirect(http.StatusFound, link.OriginalURL)
 }

@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	_ "net/http/pprof" // registers pprof handlers on http.DefaultServeMux
@@ -14,6 +15,7 @@ import (
 	"syscall"
 
 	"github.com/TranTheTuan/go-shortener/configs"
+	"github.com/TranTheTuan/go-shortener/internal/events"
 	"github.com/TranTheTuan/go-shortener/internal/handler"
 	"github.com/TranTheTuan/go-shortener/internal/repository"
 	"github.com/TranTheTuan/go-shortener/internal/router"
@@ -84,6 +86,19 @@ func run() error {
 	linkSvc := service.NewLinkService(linkRepo, linkCacheRepo, cfg.Shortener.CodeLength, cfg.Shortener.CacheTTL)
 	analyticsSvc := service.NewAnalyticsService(linkRepo, clickRepo)
 
+	// Wire the click producer: Kafka when brokers are configured, inline fallback otherwise.
+	var producer events.ClickProducer
+	if cfg.Kafka.Enabled() {
+		p, err := events.NewKafkaProducer(cfg.Kafka)
+		if err != nil {
+			return fmt.Errorf("kafka producer: %w", err)
+		}
+		producer = p
+	} else {
+		producer = events.NewInlineProducer(clickRepo)
+	}
+	defer producer.Close()
+
 	// Keycloak token verifier. The background context backs lazy JWKS fetch +
 	// key rotation; construction does not call Keycloak (app boots regardless).
 	verifier := keycloak.NewVerifier(context.Background(), cfg.Keycloak.Issuer, cfg.Keycloak.JWKSURL, cfg.Keycloak.ClientID)
@@ -98,7 +113,7 @@ func run() error {
 		Health:   handler.NewHealthHandler(),
 		User:     handler.NewUserHandler(userSvc),
 		Link:     handler.NewLinkHandler(linkSvc, analyticsSvc, dedupCache, cfg.Shortener.BaseURL),
-		Redirect: handler.NewRedirectHandler(linkSvc, analyticsSvc),
+		Redirect: handler.NewRedirectHandler(linkSvc, producer),
 		Auth:     handler.NewAuthHandler(userSvc),
 		Frontend: handler.NewFrontendHandler(cfg.Keycloak.Issuer, cfg.Keycloak.ClientID),
 	}, router.Deps{

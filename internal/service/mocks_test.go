@@ -231,3 +231,7 @@ func (m *mockClickRepo) CountByLinkID(ctx context.Context, linkID int64) (int64,
 func (m *mockClickRepo) ListByLinkID(ctx context.Context, linkID int64, limit int) ([]*repository.Click, error) {
 	return m.listFn(ctx, linkID, limit)
 }
+
+func (m *mockClickRepo) CreateBatch(_ context.Context, _ []*repository.Click) error {
+	return nil
+}
