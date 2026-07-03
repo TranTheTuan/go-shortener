@@ -44,12 +44,6 @@ func (m *mockClickRepo) ListByLinkID(_ context.Context, _ int64, _ int) ([]*repo
 	return nil, nil
 }
 
-func (m *mockClickRepo) count() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return len(m.clicks)
-}
-
 func TestKafkaProducer_PublishBuildsRecord(t *testing.T) {
 	var got *kgo.Record
 	p := &kafkaProducer{
