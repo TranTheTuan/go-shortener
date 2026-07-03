@@ -5,7 +5,7 @@ export
 MIGRATIONS_PATH ?= migrations
 DB_URL := postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)
 
-.PHONY: help run build tidy test lint swag \
+.PHONY: help run build run-consumer tidy test lint swag \
 	migrate-create migrate-up migrate-down migrate-force migrate-version
 
 help: ## Show this help.
@@ -15,8 +15,11 @@ help: ## Show this help.
 run: ## Run the HTTP server.
 	go run ./cmd/server
 
-build: ## Build the server binary into ./build/main.
+build: ## Build the binary into ./build/main (run as `main` or `main consumer`).
 	go build -o ./build/main ./cmd/server
+
+run-analyze: ## Run the click-analyze worker (same binary, "analyze" subcommand).
+	go run ./cmd/server analyze
 
 tidy: ## Tidy module dependencies.
 	go mod tidy

@@ -11,6 +11,17 @@
       "mode": "auto",
       "program": "${workspaceFolder}/cmd/server",
       "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "name": "Run Analytics Consumer",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/server",
+      "envFile": "${workspaceFolder}/.env",
+      "args": [
+        "analyze"
+      ]
     }
   ]
 }
