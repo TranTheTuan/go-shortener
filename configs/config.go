@@ -42,15 +42,13 @@ type KeycloakConfig struct {
 
 // KafkaConfig holds Kafka producer/consumer settings.
 type KafkaConfig struct {
-	Brokers       []string      `env:"BROKERS" envSeparator:","`
-	ClickTopic    string        `env:"CLICK_TOPIC" envDefault:"link-clicks"`
-	ConsumerGroup string        `env:"CONSUMER_GROUP" envDefault:"click-consumer"`
-	BatchSize     int           `env:"BATCH_SIZE" envDefault:"500"`
-	BatchInterval time.Duration `env:"BATCH_INTERVAL" envDefault:"1s"`
-	SASLMechanism string        `env:"SASL_MECHANISM"`
-	SASLUsername  string        `env:"SASL_USERNAME"`
-	SASLPassword  string        `env:"SASL_PASSWORD"`
-	TLSEnabled    bool          `env:"TLS_ENABLED" envDefault:"false"`
+	Brokers       []string `env:"BROKERS" envSeparator:","`
+	ClickTopic    string   `env:"CLICK_TOPIC" envDefault:"link-clicks"`
+	ConsumerGroup string   `env:"CONSUMER_GROUP" envDefault:"click-consumer"`
+	SASLMechanism string   `env:"SASL_MECHANISM"`
+	SASLUsername  string   `env:"SASL_USERNAME"`
+	SASLPassword  string   `env:"SASL_PASSWORD"`
+	TLSEnabled    bool     `env:"TLS_ENABLED" envDefault:"false"`
 }
 
 // Enabled reports whether Kafka brokers are configured.

@@ -24,6 +24,18 @@ type ClickEvent struct {
 	UserAgent string    `json:"user_agent,omitempty"`
 }
 
+// toClick maps the event to a persisted click row (shared by the inline
+// producer and the consumer).
+func (ev ClickEvent) toClick() *repository.Click {
+	return &repository.Click{
+		LinkID:    ev.LinkID,
+		ClickedAt: ev.ClickedAt,
+		Referrer:  ev.Referrer,
+		IPAddress: ev.IPAddress,
+		UserAgent: ev.UserAgent,
+	}
+}
+
 // ClickProducer publishes click events. Publish is non-blocking and never
 // returns an error — failures drop the event and log, so the redirect path
 // never depends on Kafka.
@@ -49,9 +61,14 @@ func buildKGOOpts(cfg configs.KafkaConfig) []kgo.Opt {
 
 // --- Kafka producer ---
 
+// produceFunc is the record-send seam (satisfied by (*kgo.Client).TryProduce),
+// so Publish can be unit-tested without a broker.
+type produceFunc func(ctx context.Context, rec *kgo.Record, promise func(*kgo.Record, error))
+
 type kafkaProducer struct {
-	cl    *kgo.Client
-	topic string
+	produce produceFunc
+	topic   string
+	closeFn func()
 }
 
 // NewKafkaProducer creates a franz-go async producer with SASL/TLS from cfg.
@@ -65,7 +82,10 @@ func NewKafkaProducer(cfg configs.KafkaConfig) (ClickProducer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &kafkaProducer{cl: cl, topic: cfg.ClickTopic}, nil
+	// TryProduce (not Produce): fail fast with ErrMaxBuffered when the client's
+	// buffer is full instead of blocking the caller — the redirect path must never
+	// block on Kafka.
+	return &kafkaProducer{produce: cl.TryProduce, topic: cfg.ClickTopic, closeFn: cl.Close}, nil
 }
 
 func (p *kafkaProducer) Publish(ev ClickEvent) {
@@ -74,8 +94,8 @@ func (p *kafkaProducer) Publish(ev ClickEvent) {
 		slog.Warn("click event marshal failed", "error", err)
 		return
 	}
-	key := strconv.AppendInt(nil, ev.LinkID, 10)
-	p.cl.Produce(context.Background(), &kgo.Record{Topic: p.topic, Key: key, Value: payload},
+	key := strconv.AppendInt(nil, ev.LinkID, 10) // partition by link_id
+	p.produce(context.Background(), &kgo.Record{Topic: p.topic, Key: key, Value: payload},
 		func(_ *kgo.Record, err error) {
 			if err != nil {
 				slog.Warn("click produce failed (dropped)", "link_id", ev.LinkID, "error", err)
@@ -83,7 +103,7 @@ func (p *kafkaProducer) Publish(ev ClickEvent) {
 		})
 }
 
-func (p *kafkaProducer) Close() { p.cl.Close() }
+func (p *kafkaProducer) Close() { p.closeFn() }
 
 // --- Inline fallback producer ---
 
@@ -111,14 +131,7 @@ func NewInlineProducer(clicks repository.ClickRepository) ClickProducer {
 func (p *inlineProducer) run() {
 	defer close(p.done)
 	for ev := range p.ch {
-		click := &repository.Click{
-			LinkID:    ev.LinkID,
-			ClickedAt: ev.ClickedAt,
-			Referrer:  ev.Referrer,
-			IPAddress: ev.IPAddress,
-			UserAgent: ev.UserAgent,
-		}
-		if err := p.clicks.Create(context.Background(), click); err != nil {
+		if err := p.clicks.Create(context.Background(), ev.toClick()); err != nil {
 			slog.Warn("inline click insert failed", "link_id", ev.LinkID, "error", err)
 		}
 	}
