@@ -22,7 +22,20 @@ type Config struct {
 	Keycloak  KeycloakConfig  `envPrefix:"KEYCLOAK_"`
 	Quota     QuotaConfig     `envPrefix:"QUOTA_"`
 	Kafka     KafkaConfig     `envPrefix:"KAFKA_"`
+	R2        R2Config        `envPrefix:"R2_"`
 }
+
+// R2Config holds Cloudflare R2 (S3-compatible) settings.
+// Endpoint is derived from AccountID: <AccountID>.r2.cloudflarestorage.com
+type R2Config struct {
+	AccountID       string `env:"ACCOUNT_ID"`
+	AccessKeyID     string `env:"ACCESS_KEY_ID"`
+	SecretAccessKey string `env:"SECRET_ACCESS_KEY"`
+	Bucket          string `env:"BUCKET" envDefault:"bulk-uploads"`
+}
+
+// Enabled reports whether R2 credentials are configured.
+func (r R2Config) Enabled() bool { return r.AccountID != "" && r.AccessKeyID != "" }
 
 // KeycloakConfig holds the OIDC resource-server settings. The service validates
 // Keycloak-issued access tokens; it no longer issues its own.
@@ -42,13 +55,15 @@ type KeycloakConfig struct {
 
 // KafkaConfig holds Kafka producer/consumer settings.
 type KafkaConfig struct {
-	Brokers       []string `env:"BROKERS" envSeparator:","`
-	ClickTopic    string   `env:"CLICK_TOPIC" envDefault:"link-clicks"`
-	ConsumerGroup string   `env:"CONSUMER_GROUP" envDefault:"click-consumer"`
-	SASLMechanism string   `env:"SASL_MECHANISM"`
-	SASLUsername  string   `env:"SASL_USERNAME"`
-	SASLPassword  string   `env:"SASL_PASSWORD"`
-	TLSEnabled    bool     `env:"TLS_ENABLED" envDefault:"false"`
+	Brokers           []string `env:"BROKERS" envSeparator:","`
+	ClickTopic        string   `env:"CLICK_TOPIC" envDefault:"link-clicks"`
+	ConsumerGroup     string   `env:"CONSUMER_GROUP" envDefault:"click-consumer"`
+	BulkJobTopic      string   `env:"BULK_JOB_TOPIC" envDefault:"bulk-link-jobs"`
+	BulkConsumerGroup string   `env:"BULK_CONSUMER_GROUP" envDefault:"bulk-job-consumer"`
+	SASLMechanism     string   `env:"SASL_MECHANISM"`
+	SASLUsername      string   `env:"SASL_USERNAME"`
+	SASLPassword      string   `env:"SASL_PASSWORD"`
+	TLSEnabled        bool     `env:"TLS_ENABLED" envDefault:"false"`
 }
 
 // Enabled reports whether Kafka brokers are configured.

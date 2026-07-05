@@ -32,6 +32,7 @@ type Handlers struct {
 	Redirect *handler.RedirectHandler
 	Auth     *handler.AuthHandler
 	Frontend *handler.FrontendHandler
+	BulkJob  *handler.BulkJobHandler // nil when R2 is not configured
 }
 
 // New builds a configured Echo instance with middleware and all routes. Deps
@@ -87,6 +88,16 @@ func registerRoutes(e *echo.Echo, h Handlers, deps Deps) {
 	links.POST("", h.Link.Create, appmw.DuplicateURLCheck(deps.Dedup), appmw.QuotaCheck(deps.Quota))
 	links.GET("", h.Link.List)
 	links.GET("/:code/stats", h.Link.Stats)
+
+	// Bulk URL upload — only registered when R2 is configured.
+	if h.BulkJob != nil {
+		bulk := api.Group("/bulk-jobs")
+		bulk.GET("/template", h.BulkJob.DownloadTemplate)
+		bulk.POST("/upload-url", h.BulkJob.GetUploadURL)
+		bulk.POST("", h.BulkJob.ConfirmUpload)
+		bulk.GET("", h.BulkJob.ListJobs)
+		bulk.GET("/:id", h.BulkJob.GetJob)
+	}
 
 	// Public redirect. Registered last; Echo prioritizes the static /healthz,
 	// /users and /api routes over this catch-all param route.
