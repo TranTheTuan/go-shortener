@@ -4,6 +4,7 @@
 // then calls the same-origin JSON API with a Bearer token. Runtime config
 // (auth URL / realm / client) is fetched from the backend so it never drifts.
 import Keycloak from "/static/keycloak.js";
+import { wireBulk } from "/static/bulk.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -66,6 +67,7 @@ function renderSignedIn(kc) {
   loadProfile(api);
   wireCreateForm(api, links.reload);
   wireStatsForm(api);
+  wireBulk(api);
 }
 
 async function loadProfile(api) {

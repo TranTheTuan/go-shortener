@@ -39,8 +39,10 @@ func main() {
 		err = runServer()
 	case "analyze":
 		err = runAnalyzeConsumer()
+	case "bulk-worker":
+		err = runBulkWorker()
 	default:
-		slog.Error(`unknown mode (want "server" or "analyze")`, "mode", mode)
+		slog.Error(`unknown mode (want "server", "analyze", or "bulk-worker")`, "mode", mode)
 		os.Exit(2)
 	}
 

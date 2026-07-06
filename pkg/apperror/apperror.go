@@ -78,6 +78,11 @@ func TooManyRequests(message string) *Error {
 	return New(http.StatusTooManyRequests, "QUOTA_EXCEEDED", message)
 }
 
+// UnprocessableEntity reports semantically invalid input (HTTP 422).
+func UnprocessableEntity(message string) *Error {
+	return New(http.StatusUnprocessableEntity, "UNPROCESSABLE", message)
+}
+
 // Internal reports an unexpected server-side failure (HTTP 500). The cause is
 // wrapped for logging but never shown to clients.
 func Internal(err error) *Error {

@@ -9,6 +9,7 @@ import (
 	_ "net/http/pprof" // registers pprof handlers on http.DefaultServeMux
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/TranTheTuan/go-shortener/configs"
 	"github.com/TranTheTuan/go-shortener/internal/events"
@@ -19,6 +20,7 @@ import (
 	"github.com/TranTheTuan/go-shortener/pkg/database"
 	"github.com/TranTheTuan/go-shortener/pkg/keycloak"
 	"github.com/TranTheTuan/go-shortener/pkg/redisbreaker"
+	"github.com/TranTheTuan/go-shortener/pkg/storage"
 )
 
 // runServer loads config, wires the handler/service/repository layers, and runs
@@ -84,6 +86,30 @@ func runServer() error {
 	subRepo := repository.NewSubscriptionRepository(db)
 	quotaSvc := service.NewQuotaService(rdb, breaker, planRepo, subRepo, cfg.Quota.DefaultPlanCode, cfg.Quota.BasicFallbackLimit)
 
+	// Bulk upload — optional; only wired when R2 credentials are present.
+	var bulkHandler *handler.BulkJobHandler
+	var bulkRepo repository.BulkJobRepository
+	var bulkProducer events.BulkJobProducer
+	if cfg.R2.Enabled() {
+		r2, err := storage.NewR2Client(cfg.R2)
+		if err != nil {
+			return fmt.Errorf("r2 client: %w", err)
+		}
+		bulkRepo = repository.NewBulkJobRepository(db)
+		bulkSvc := service.NewBulkJobService(bulkRepo, r2, cfg.Shortener.BaseURL)
+		bulkHandler = handler.NewBulkJobHandler(bulkSvc)
+		if cfg.Kafka.Enabled() {
+			bp, err := events.NewBulkJobProducer(cfg.Kafka)
+			if err != nil {
+				return fmt.Errorf("bulk job producer: %w", err)
+			}
+			bulkProducer = bp
+			defer bulkProducer.Close()
+		}
+	} else {
+		slog.Warn("R2 not configured; bulk-upload endpoints disabled")
+	}
+
 	e := router.New(router.Handlers{
 		Health:   handler.NewHealthHandler(),
 		User:     handler.NewUserHandler(userSvc),
@@ -91,6 +117,7 @@ func runServer() error {
 		Redirect: handler.NewRedirectHandler(linkSvc, producer),
 		Auth:     handler.NewAuthHandler(userSvc),
 		Frontend: handler.NewFrontendHandler(cfg.Keycloak.Issuer, cfg.Keycloak.ClientID),
+		BulkJob:  bulkHandler,
 	}, router.Deps{
 		Verifier: verifier,
 		Users:    userSvc,
@@ -104,6 +131,10 @@ func runServer() error {
 	// Trap interrupt/termination signals for graceful shutdown.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	if bulkProducer != nil {
+		go outboxRelay(ctx, bulkRepo, bulkProducer, 5*time.Second)
+	}
 
 	// Run the server in the background.
 	serverErr := make(chan error, 1)

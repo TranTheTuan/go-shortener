@@ -21,6 +21,9 @@ build: ## Build the binary into ./build/main (run as `main` or `main consumer`).
 run-analyze: ## Run the click-analyze worker (same binary, "analyze" subcommand).
 	go run ./cmd/server analyze
 
+run-bulk: ## Run the bulk worker (same binary, "bulk-worker" subcommand).
+	go run ./cmd/server bulk-worker
+
 tidy: ## Tidy module dependencies.
 	go mod tidy
 

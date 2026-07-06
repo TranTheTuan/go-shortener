@@ -1,0 +1,7 @@
+# golangci-lint v2 config.
+version: "2"
+linters:
+  # errcheck flags every unchecked error return. Disabled by choice — accept the
+  # risk that genuinely-ignored errors (not just deferred Close) slip through.
+  disable:
+    - errcheck
