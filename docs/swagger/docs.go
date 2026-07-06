@@ -15,6 +15,244 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/bulk-jobs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bulk-jobs"
+                ],
+                "summary": "List the caller's bulk jobs",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Page size",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset into the result set",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_handler.bulkJobResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "missing or invalid token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Registers a previously uploaded file (by file_key) as a bulk job and queues it for processing.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bulk-jobs"
+                ],
+                "summary": "Confirm an upload and start a bulk job",
+                "parameters": [
+                    {
+                        "description": "Uploaded file key + metadata",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.confirmRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.bulkJobResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid request body",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    },
+                    "401": {
+                        "description": "missing or invalid token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/bulk-jobs/template": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns an empty template (columns: url, result) for the user to fill in and upload.",
+                "produces": [
+                    "text/csv",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ],
+                "tags": [
+                    "bulk-jobs"
+                ],
+                "summary": "Download the bulk-upload template",
+                "parameters": [
+                    {
+                        "enum": [
+                            "csv",
+                            "xlsx"
+                        ],
+                        "type": "string",
+                        "default": "csv",
+                        "description": "Template format",
+                        "name": "format",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "the template file",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "401": {
+                        "description": "missing or invalid token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/bulk-jobs/upload-url": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a presigned R2 URL the client PUTs the filled CSV/XLSX to, plus the file_key used to confirm the upload.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bulk-jobs"
+                ],
+                "summary": "Get a presigned URL to upload a bulk file",
+                "parameters": [
+                    {
+                        "description": "File metadata (filename, row_count, content_md5)",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.uploadURLRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.uploadURLResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid request body",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    },
+                    "401": {
+                        "description": "missing or invalid token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/bulk-jobs/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the job's status/progress and, once finished, a result_url to download the processed file.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bulk-jobs"
+                ],
+                "summary": "Get a bulk job by ID",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Bulk job ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.bulkJobResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "missing or invalid token",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    },
+                    "404": {
+                        "description": "job not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/links": {
             "get": {
                 "security": [
@@ -405,6 +643,43 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_handler.bulkJobResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "done_rows": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "result_url": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "total_rows": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_handler.confirmRequest": {
+            "type": "object",
+            "properties": {
+                "file_key": {
+                    "type": "string"
+                },
+                "filename": {
+                    "type": "string"
+                },
+                "row_count": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_handler.createLinkRequest": {
             "type": "object",
             "properties": {
@@ -473,6 +748,31 @@ const docTemplate = `{
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_handler.uploadURLRequest": {
+            "type": "object",
+            "properties": {
+                "content_md5": {
+                    "type": "string"
+                },
+                "filename": {
+                    "type": "string"
+                },
+                "row_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_handler.uploadURLResponse": {
+            "type": "object",
+            "properties": {
+                "file_key": {
+                    "type": "string"
+                },
+                "presigned_url": {
+                    "type": "string"
                 }
             }
         }

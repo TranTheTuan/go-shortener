@@ -59,6 +59,33 @@
         </div>
       </section>
 
+      <!-- Bulk upload — only shown when the backend has R2 enabled -->
+      <section id="bulk" hidden>
+        <hr />
+        <h2>Bulk upload</h2>
+        <div class="row">
+          <span class="muted">Template:</span>
+          <button id="tpl-csv" type="button">Download CSV</button>
+          <button id="tpl-xlsx" type="button">Download XLSX</button>
+        </div>
+        <form id="bulk-form">
+          <label for="bulk-file">Upload a filled CSV (column: url)</label>
+          <div class="row">
+            <input id="bulk-file" type="file" accept=".csv,text/csv" required />
+            <button class="primary" type="submit">Upload</button>
+          </div>
+        </form>
+        <p id="bulk-status" class="result"></p>
+
+        <p id="bulk-jobs-status" class="muted"></p>
+        <table id="bulk-jobs-table" hidden>
+          <thead>
+            <tr><th>ID</th><th>Status</th><th>Progress</th><th>Created</th><th>Result</th></tr>
+          </thead>
+          <tbody id="bulk-jobs-body"></tbody>
+        </table>
+      </section>
+
       <button id="signout" class="link" hidden>Sign out</button>
     </section>
   </main>

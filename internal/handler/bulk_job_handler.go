@@ -47,7 +47,18 @@ type bulkJobResponse struct {
 	CreatedAt string `json:"created_at"`
 }
 
-// DownloadTemplate handles GET /api/bulk-jobs/template?format=csv|xlsx
+// DownloadTemplate handles GET /api/bulk-jobs/template.
+//
+// @Summary      Download the bulk-upload template
+// @Description  Returns an empty template (columns: url, result) for the user to fill in and upload.
+// @Tags         bulk-jobs
+// @Produce      text/csv
+// @Produce      application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+// @Security     BearerAuth
+// @Param        format  query     string  false  "Template format"  Enums(csv, xlsx)  default(csv)
+// @Success      200     {file}    binary             "the template file"
+// @Failure      401     {object}  response.Envelope  "missing or invalid token"
+// @Router       /api/bulk-jobs/template [get]
 func (h *BulkJobHandler) DownloadTemplate(c echo.Context) error {
 	format := c.QueryParam("format")
 	data, ct, filename, err := h.svc.DownloadTemplate(format)
@@ -58,7 +69,19 @@ func (h *BulkJobHandler) DownloadTemplate(c echo.Context) error {
 	return c.Blob(http.StatusOK, ct, data)
 }
 
-// GetUploadURL handles POST /api/bulk-jobs/upload-url
+// GetUploadURL handles POST /api/bulk-jobs/upload-url.
+//
+// @Summary      Get a presigned URL to upload a bulk file
+// @Description  Returns a presigned R2 URL the client PUTs the filled CSV/XLSX to, plus the file_key used to confirm the upload.
+// @Tags         bulk-jobs
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request  body      uploadURLRequest   true  "File metadata (filename, row_count, content_md5)"
+// @Success      200      {object}  uploadURLResponse
+// @Failure      400      {object}  response.Envelope  "invalid request body"
+// @Failure      401      {object}  response.Envelope  "missing or invalid token"
+// @Router       /api/bulk-jobs/upload-url [post]
 func (h *BulkJobHandler) GetUploadURL(c echo.Context) error {
 	owner, ok := appmw.UserIDFrom(c)
 	if !ok {
@@ -75,7 +98,19 @@ func (h *BulkJobHandler) GetUploadURL(c echo.Context) error {
 	return response.Success(c, http.StatusOK, uploadURLResponse{PresignedURL: presignedURL, FileKey: fileKey})
 }
 
-// ConfirmUpload handles POST /api/bulk-jobs
+// ConfirmUpload handles POST /api/bulk-jobs.
+//
+// @Summary      Confirm an upload and start a bulk job
+// @Description  Registers a previously uploaded file (by file_key) as a bulk job and queues it for processing.
+// @Tags         bulk-jobs
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request  body      confirmRequest     true  "Uploaded file key + metadata"
+// @Success      201      {object}  bulkJobResponse
+// @Failure      400      {object}  response.Envelope  "invalid request body"
+// @Failure      401      {object}  response.Envelope  "missing or invalid token"
+// @Router       /api/bulk-jobs [post]
 func (h *BulkJobHandler) ConfirmUpload(c echo.Context) error {
 	owner, ok := appmw.UserIDFrom(c)
 	if !ok {
@@ -97,7 +132,17 @@ func (h *BulkJobHandler) ConfirmUpload(c echo.Context) error {
 	})
 }
 
-// ListJobs handles GET /api/bulk-jobs
+// ListJobs handles GET /api/bulk-jobs.
+//
+// @Summary      List the caller's bulk jobs
+// @Tags         bulk-jobs
+// @Produce      json
+// @Security     BearerAuth
+// @Param        limit   query     int  false  "Page size"
+// @Param        offset  query     int  false  "Offset into the result set"
+// @Success      200     {array}   bulkJobResponse
+// @Failure      401     {object}  response.Envelope  "missing or invalid token"
+// @Router       /api/bulk-jobs [get]
 func (h *BulkJobHandler) ListJobs(c echo.Context) error {
 	owner, ok := appmw.UserIDFrom(c)
 	if !ok {
@@ -122,7 +167,18 @@ func (h *BulkJobHandler) ListJobs(c echo.Context) error {
 	return response.Success(c, http.StatusOK, out)
 }
 
-// GetJob handles GET /api/bulk-jobs/:id
+// GetJob handles GET /api/bulk-jobs/:id.
+//
+// @Summary      Get a bulk job by ID
+// @Description  Returns the job's status/progress and, once finished, a result_url to download the processed file.
+// @Tags         bulk-jobs
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      int  true  "Bulk job ID"
+// @Success      200  {object}  bulkJobResponse
+// @Failure      401  {object}  response.Envelope  "missing or invalid token"
+// @Failure      404  {object}  response.Envelope  "job not found"
+// @Router       /api/bulk-jobs/{id} [get]
 func (h *BulkJobHandler) GetJob(c echo.Context) error {
 	owner, ok := appmw.UserIDFrom(c)
 	if !ok {

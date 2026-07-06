@@ -37,6 +37,7 @@ short codes and writes a result file back to R2.
 | 06 | [HTTP handlers & routes](phase-06-http-handlers-and-routes.md) | 04 | pending |
 | 07 | [Server wiring & worker runner](phase-07-server-wiring.md) | 05, 06 | pending |
 | 08 | [Tests](phase-08-tests.md) | 01–07 | pending |
+| 09 | [Frontend bulk-upload UI](phase-09-frontend-bulk-upload-ui.md) | 06 | done |
 
 ## Key Dependencies (new)
 - `github.com/minio/minio-go/v7` — R2 S3-compatible client (`PresignHeader`, `PutObject` w/ `SendContentMd5`)

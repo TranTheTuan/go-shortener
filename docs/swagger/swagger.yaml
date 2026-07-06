@@ -54,6 +54,30 @@ definitions:
       message:
         type: string
     type: object
+  internal_handler.bulkJobResponse:
+    properties:
+      created_at:
+        type: string
+      done_rows:
+        type: integer
+      id:
+        type: integer
+      result_url:
+        type: string
+      status:
+        type: string
+      total_rows:
+        type: integer
+    type: object
+  internal_handler.confirmRequest:
+    properties:
+      file_key:
+        type: string
+      filename:
+        type: string
+      row_count:
+        type: integer
+    type: object
   internal_handler.createLinkRequest:
     properties:
       expires_at:
@@ -100,6 +124,22 @@ definitions:
       total:
         type: integer
     type: object
+  internal_handler.uploadURLRequest:
+    properties:
+      content_md5:
+        type: string
+      filename:
+        type: string
+      row_count:
+        type: integer
+    type: object
+  internal_handler.uploadURLResponse:
+    properties:
+      file_key:
+        type: string
+      presigned_url:
+        type: string
+    type: object
 info:
   contact: {}
   description: |-
@@ -134,6 +174,160 @@ paths:
       summary: Redirect to the original URL
       tags:
       - redirect
+  /api/bulk-jobs:
+    get:
+      parameters:
+      - description: Page size
+        in: query
+        name: limit
+        type: integer
+      - description: Offset into the result set
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_handler.bulkJobResponse'
+            type: array
+        "401":
+          description: missing or invalid token
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: List the caller's bulk jobs
+      tags:
+      - bulk-jobs
+    post:
+      consumes:
+      - application/json
+      description: Registers a previously uploaded file (by file_key) as a bulk job
+        and queues it for processing.
+      parameters:
+      - description: Uploaded file key + metadata
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.confirmRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/internal_handler.bulkJobResponse'
+        "400":
+          description: invalid request body
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "401":
+          description: missing or invalid token
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Confirm an upload and start a bulk job
+      tags:
+      - bulk-jobs
+  /api/bulk-jobs/{id}:
+    get:
+      description: Returns the job's status/progress and, once finished, a result_url
+        to download the processed file.
+      parameters:
+      - description: Bulk job ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handler.bulkJobResponse'
+        "401":
+          description: missing or invalid token
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "404":
+          description: job not found
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Get a bulk job by ID
+      tags:
+      - bulk-jobs
+  /api/bulk-jobs/template:
+    get:
+      description: 'Returns an empty template (columns: url, result) for the user
+        to fill in and upload.'
+      parameters:
+      - default: csv
+        description: Template format
+        enum:
+        - csv
+        - xlsx
+        in: query
+        name: format
+        type: string
+      produces:
+      - text/csv
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      responses:
+        "200":
+          description: the template file
+          schema:
+            type: file
+        "401":
+          description: missing or invalid token
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Download the bulk-upload template
+      tags:
+      - bulk-jobs
+  /api/bulk-jobs/upload-url:
+    post:
+      consumes:
+      - application/json
+      description: Returns a presigned R2 URL the client PUTs the filled CSV/XLSX
+        to, plus the file_key used to confirm the upload.
+      parameters:
+      - description: File metadata (filename, row_count, content_md5)
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.uploadURLRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handler.uploadURLResponse'
+        "400":
+          description: invalid request body
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "401":
+          description: missing or invalid token
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Get a presigned URL to upload a bulk file
+      tags:
+      - bulk-jobs
   /api/links:
     get:
       parameters:

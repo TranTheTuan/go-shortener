@@ -418,6 +418,36 @@ PING                            # Should return PONG
 INFO                            # Server info
 ```
 
+### Cloudflare R2 (Bulk Upload)
+
+The bulk-upload feature stores files in an R2 bucket. Set the R2 env vars
+(`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`); when
+they're absent the `/api/bulk-jobs` routes are simply not registered and the
+frontend hides the bulk section.
+
+**CORS is mandatory for the browser upload.** The frontend PUTs the file
+directly to a presigned R2 URL (`https://<account>.r2.cloudflarestorage.com/...`)
+with a `Content-MD5` header. That header is non-simple, so the browser sends a
+CORS preflight. Without a bucket CORS policy the upload fails (curl is unaffected —
+it ignores CORS). Configure the bucket CORS to allow the app origin, `PUT`, and
+the `content-md5` header:
+
+```json
+[
+  {
+    "AllowedOrigins": ["https://your-app-domain.example"],
+    "AllowedMethods": ["PUT"],
+    "AllowedHeaders": ["content-md5", "content-type"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+Apply via the Cloudflare dashboard (R2 → bucket → Settings → CORS Policy) or the
+S3 API (`aws s3api put-bucket-cors --bucket <bucket> --cors-configuration file://cors.json`
+against the R2 S3 endpoint). Use the exact scheme+host of the deployed frontend;
+`*` works for a quick test but tighten it for production.
+
 ### Migration Management (Production)
 
 ```bash
