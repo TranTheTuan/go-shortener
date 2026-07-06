@@ -4,92 +4,171 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Go URL Shortener</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/styles.css" />
+  <!-- Apply the saved theme before first paint to avoid a flash. Light is default. -->
+  <script>
+    document.documentElement.setAttribute("data-theme", localStorage.getItem("theme") || "light");
+  </script>
 </head>
 <body>
-  <main class="card">
-    <h1>Go URL Shortener</h1>
-    <p id="status" class="muted">Loading…</p>
+  <!-- Boot state shown until auth resolves. -->
+  <p id="status" class="boot muted">Loading…</p>
 
-    <!-- Signed-out view -->
-    <section id="signed-out" hidden>
-      <p>Sign in with Keycloak to create short links.</p>
-      <button id="signin" class="primary">Sign in</button>
-    </section>
-
-    <!-- Signed-in view -->
-    <section id="signed-in" hidden>
-      <p id="greeting" class="muted"></p>
-
-      <form id="create-form">
-        <label for="url">URL to shorten</label>
-        <input id="url" type="url" placeholder="https://example.com" required />
-        <label for="expires">Expires at (optional)</label>
-        <input id="expires" type="datetime-local" />
-        <button class="primary" type="submit">Create short link</button>
-      </form>
-      <p id="result" class="result"></p>
-
-      <hr />
-
-      <form id="stats-form">
-        <label for="code">Look up click stats by short code</label>
-        <div class="row">
-          <input id="code" type="text" placeholder="Ab3xY7q" />
-          <button type="submit">Get stats</button>
-        </div>
-      </form>
-      <p id="stats-result" class="result"></p>
-
-      <hr />
-
-      <section id="links">
-        <h2>My links</h2>
-        <p id="links-status" class="muted"></p>
-        <table id="links-table" hidden>
-          <thead>
-            <tr><th>Short</th><th>Original</th><th>Clicks</th><th>Created</th><th>Expires</th></tr>
-          </thead>
-          <tbody id="links-body"></tbody>
-        </table>
-        <div id="links-pager" class="row" hidden>
-          <button id="prev" type="button">Prev</button>
-          <span id="page-info" class="muted"></span>
-          <button id="next" type="button">Next</button>
-        </div>
-      </section>
-
-      <!-- Bulk upload — only shown when the backend has R2 enabled -->
-      <section id="bulk" hidden>
-        <hr />
-        <h2>Bulk upload</h2>
-        <div class="row">
-          <span class="muted">Template:</span>
-          <button id="tpl-csv" type="button">Download CSV</button>
-          <button id="tpl-xlsx" type="button">Download XLSX</button>
-        </div>
-        <form id="bulk-form">
-          <label for="bulk-file">Upload a filled CSV (column: url)</label>
-          <div class="row">
-            <input id="bulk-file" type="file" accept=".csv,text/csv" required />
-            <button class="primary" type="submit">Upload</button>
-          </div>
-        </form>
-        <p id="bulk-status" class="result"></p>
-
-        <p id="bulk-jobs-status" class="muted"></p>
-        <table id="bulk-jobs-table" hidden>
-          <thead>
-            <tr><th>ID</th><th>Status</th><th>Progress</th><th>Created</th><th>Result</th></tr>
-          </thead>
-          <tbody id="bulk-jobs-body"></tbody>
-        </table>
-      </section>
-
-      <button id="signout" class="link" hidden>Sign out</button>
-    </section>
+  <!-- Signed-out: centered login card -->
+  <main id="signed-out" class="auth-card" hidden>
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">↗</span>
+      <span class="brand-name">go<span class="slash">/</span>short</span>
+    </div>
+    <p class="lead">Shorten, track, and bulk-manage your links — one fast, tidy workspace.</p>
+    <button id="signin" class="primary">Sign in with Keycloak</button>
   </main>
 
+  <!-- Signed-in: production app shell (sidebar nav + switchable views) -->
+  <div id="app" class="shell" hidden>
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">↗</span>
+        <span class="brand-name">go<span class="slash">/</span>short</span>
+      </div>
+      <nav class="nav">
+        <button class="nav-item" type="button" data-view="create">Create</button>
+        <button class="nav-item" type="button" data-view="links">My links</button>
+        <button class="nav-item" type="button" data-view="stats">Stats</button>
+        <!-- Revealed by bulk.js only when the backend exposes /api/bulk-jobs. -->
+        <button class="nav-item" type="button" data-view="bulk" id="bulk-nav" hidden>Bulk upload</button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="menu" id="settings-menu">
+          <button class="settings-btn" id="settings-btn" type="button" aria-haspopup="true" aria-expanded="false">
+            <span class="gear" aria-hidden="true">⚙</span>
+            <span>Settings</span>
+          </button>
+          <div class="dropdown" id="settings-dropdown" hidden>
+            <button class="dropdown-item" id="theme-toggle" type="button">
+              <span>Theme</span>
+              <span class="val" id="theme-label">Light</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div class="topbar-head">
+          <span class="eyebrow">Workspace</span>
+          <h2 id="view-title">Create link</h2>
+        </div>
+        <div class="menu">
+          <button class="user-chip" id="user-btn" type="button" aria-haspopup="true" aria-expanded="false">
+            <span class="avatar" id="avatar">·</span>
+            <span id="user-name">Account</span>
+            <span class="chev" aria-hidden="true">▾</span>
+          </button>
+          <div class="dropdown" id="user-dropdown" hidden>
+            <button id="signout" class="dropdown-item" type="button">Sign out</button>
+          </div>
+        </div>
+      </header>
+
+      <div class="content">
+        <!-- Create -->
+        <section class="view" data-view="create">
+          <div class="panel">
+            <form id="create-form">
+              <label for="url">URL to shorten</label>
+              <input id="url" type="url" placeholder="https://example.com" required />
+              <label for="expires">Expires at (optional)</label>
+              <input id="expires" type="datetime-local" />
+              <button class="primary" type="submit">Create short link</button>
+            </form>
+            <p id="result" class="result"></p>
+          </div>
+        </section>
+
+        <!-- My links -->
+        <section class="view" data-view="links" hidden>
+          <div class="panel">
+            <p id="links-status" class="muted"></p>
+            <table id="links-table" hidden>
+              <thead>
+                <tr><th>Short</th><th>Original</th><th>Clicks</th><th>Created</th><th>Expires</th></tr>
+              </thead>
+              <tbody id="links-body"></tbody>
+            </table>
+            <div id="links-pager" class="row" hidden>
+              <button id="prev" type="button">Prev</button>
+              <span id="page-info" class="muted"></span>
+              <button id="next" type="button">Next</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Stats -->
+        <section class="view" data-view="stats" hidden>
+          <div class="panel">
+            <form id="stats-form">
+              <label for="code">Look up click stats by short code</label>
+              <div class="row">
+                <input id="code" type="text" placeholder="Ab3xY7q" />
+                <button type="submit">Get stats</button>
+              </div>
+            </form>
+            <p id="stats-result" class="result"></p>
+          </div>
+        </section>
+
+        <!-- Bulk upload -->
+        <section class="view" data-view="bulk" hidden>
+          <div class="panel">
+            <div class="row toolbar">
+              <span class="muted">Template:</span>
+              <button id="tpl-csv" type="button">Download CSV</button>
+              <button id="tpl-xlsx" type="button">Download XLSX</button>
+            </div>
+            <form id="bulk-form">
+              <label for="bulk-file">Upload a filled CSV (column: url)</label>
+              <div class="row">
+                <input id="bulk-file" type="file" accept=".csv,text/csv" required />
+                <button class="primary" type="submit">Upload</button>
+              </div>
+            </form>
+            <p id="bulk-status" class="result"></p>
+            <p id="bulk-jobs-status" class="muted"></p>
+            <table id="bulk-jobs-table" hidden>
+              <thead>
+                <tr><th>ID</th><th>Status</th><th>Progress</th><th>Created</th><th>Result</th></tr>
+              </thead>
+              <tbody id="bulk-jobs-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- Theme toggle (settings dropdown). Head script already applied the theme. -->
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var btn = document.getElementById("theme-toggle");
+      var label = document.getElementById("theme-label");
+      var paint = function () {
+        label.textContent = root.getAttribute("data-theme") === "dark" ? "Dark" : "Light";
+      };
+      paint();
+      btn.addEventListener("click", function () {
+        var next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+        root.setAttribute("data-theme", next);
+        localStorage.setItem("theme", next);
+        paint();
+      });
+    })();
+  </script>
   <script type="module" src="/static/app.js"></script>
 </body>
 </html>

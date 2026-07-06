@@ -45,14 +45,19 @@ async function main() {
 }
 
 function renderSignedOut(kc) {
+  $("status").hidden = true;
   $("signed-out").hidden = false;
   $("signin").onclick = () => kc.login({ redirectUri: location.origin + "/" });
 }
 
 function renderSignedIn(kc) {
-  $("signed-in").hidden = false;
-  $("signout").hidden = false;
-  $("signout").onclick = () => kc.logout({ redirectUri: location.origin });
+  $("status").hidden = true;
+  $("app").hidden = false;
+  // Use the same redirect URI shape as login (origin + "/") so it matches the
+  // Keycloak client's whitelist — a bare origin can fail post-logout validation.
+  $("signout").onclick = () => kc.logout({ redirectUri: location.origin + "/" });
+  wireMenu($("user-btn"), $("user-dropdown"));
+  wireMenu($("settings-btn"), $("settings-dropdown"));
 
   // api attaches a fresh Bearer token to a same-origin request.
   const api = async (path, opts = {}) => {
@@ -63,6 +68,7 @@ function renderSignedIn(kc) {
     });
   };
 
+  wireNav();
   const links = wireLinks(api);
   loadProfile(api);
   wireCreateForm(api, links.reload);
@@ -70,12 +76,54 @@ function renderSignedIn(kc) {
   wireBulk(api);
 }
 
+// wireNav switches between sidebar views and keeps the URL hash in sync so a
+// view is deep-linkable and survives a refresh.
+function wireNav() {
+  const items = document.querySelectorAll(".nav-item");
+  const views = document.querySelectorAll(".view");
+  const titles = { create: "Create link", links: "My links", stats: "Stats", bulk: "Bulk upload" };
+
+  const show = (name) => {
+    if (!titles[name]) name = "create";
+    items.forEach((b) => b.classList.toggle("active", b.dataset.view === name));
+    views.forEach((v) => (v.hidden = v.dataset.view !== name));
+    text("view-title", titles[name]);
+    if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
+  };
+
+  items.forEach((b) => (b.onclick = () => show(b.dataset.view)));
+  show(location.hash.slice(1));
+}
+
+// wireMenu toggles a dropdown for a trigger button and closes it on an outside
+// click or Escape. The button and its dropdown share a positioned .menu parent.
+function wireMenu(btn, dropdown) {
+  const setOpen = (open) => {
+    dropdown.hidden = !open;
+    btn.setAttribute("aria-expanded", String(open));
+  };
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    setOpen(dropdown.hidden);
+  };
+  document.addEventListener("click", (e) => {
+    if (!btn.contains(e.target) && !dropdown.contains(e.target)) setOpen(false);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") setOpen(false);
+  });
+}
+
 async function loadProfile(api) {
   try {
     const res = await api("/auth/me");
     if (!res.ok) return;
     const { data } = await res.json();
-    text("greeting", `Signed in as ${data.username} (${data.email})`);
+    // Fill the avatar initial + username (XSS-safe via textContent).
+    $("avatar").textContent = (data.username || "?").charAt(0);
+    const name = $("user-name");
+    name.textContent = data.username;
+    name.title = data.email;
   } catch {
     /* non-fatal */
   }
