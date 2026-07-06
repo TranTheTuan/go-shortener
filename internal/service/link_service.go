@@ -212,6 +212,9 @@ func (s *linkService) Delete(ctx context.Context, code string, ownerID int64) (*
 		return nil, err
 	}
 	if err := s.repo.Delete(ctx, link.ID); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, apperror.NotFound("short link not found")
+		}
 		return nil, apperror.Internal(err)
 	}
 	s.cacheDelete(ctx, code)
@@ -230,6 +233,9 @@ func (s *linkService) Update(ctx context.Context, code string, ownerID int64, ex
 	}
 	fields := map[string]any{"is_active": isActive, "expires_at": expiresAt}
 	if err := s.repo.Update(ctx, link.ID, fields); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, apperror.NotFound("short link not found")
+		}
 		return nil, apperror.Internal(err)
 	}
 	s.cacheDelete(ctx, code)
