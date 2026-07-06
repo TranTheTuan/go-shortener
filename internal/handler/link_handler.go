@@ -8,6 +8,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	appmw "github.com/TranTheTuan/go-shortener/internal/middleware"
+	"github.com/TranTheTuan/go-shortener/internal/repository"
 	"github.com/TranTheTuan/go-shortener/internal/service"
 	"github.com/TranTheTuan/go-shortener/pkg/apperror"
 	"github.com/TranTheTuan/go-shortener/pkg/response"
@@ -107,6 +108,7 @@ type linkListItem struct {
 	OriginalURL string     `json:"original_url"`
 	CreatedAt   time.Time  `json:"created_at"`
 	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+	IsActive    bool       `json:"is_active"`
 	TotalClicks int64      `json:"total_clicks"`
 }
 
@@ -125,9 +127,11 @@ type listResponse struct {
 // @Tags         links
 // @Produce      json
 // @Security     BearerAuth
-// @Param        limit   query     int  false  "Page size (default 20, max 100)"
-// @Param        offset  query     int  false  "Offset into the result set (default 0)"
+// @Param        limit   query     int     false  "Page size (default 20, max 100)"
+// @Param        offset  query     int     false  "Offset into the result set (default 0)"
+// @Param        status  query     string  false  "Filter by status"  Enums(active, disabled, expired)
 // @Success      200     {object}  listResponse
+// @Failure      400     {object}  response.Envelope  "invalid status"
 // @Failure      401     {object}  response.Envelope  "missing or invalid token"
 // @Router       /api/links [get]
 func (h *LinkHandler) List(c echo.Context) error {
@@ -136,9 +140,14 @@ func (h *LinkHandler) List(c echo.Context) error {
 		return response.Error(c, apperror.New(http.StatusUnauthorized, "UNAUTHORIZED", "not authenticated"))
 	}
 
+	status := c.QueryParam("status")
+	if !validLinkStatus(status) {
+		return response.Error(c, apperror.BadRequest("invalid status (want active, disabled, or expired)"))
+	}
+
 	limit, offset := service.ClampPaging(atoiDefault(c.QueryParam("limit"), 0), atoiDefault(c.QueryParam("offset"), 0))
 
-	items, total, err := h.links.ListByOwner(c.Request().Context(), owner, limit, offset)
+	items, total, err := h.links.ListByOwner(c.Request().Context(), owner, status, limit, offset)
 	if err != nil {
 		return response.Error(c, err)
 	}
@@ -151,11 +160,109 @@ func (h *LinkHandler) List(c echo.Context) error {
 			OriginalURL: it.OriginalURL,
 			CreatedAt:   it.CreatedAt,
 			ExpiresAt:   it.ExpiresAt,
+			IsActive:    it.IsActive,
 			TotalClicks: it.TotalClicks,
 		})
 	}
 
 	return response.Success(c, http.StatusOK, listResponse{Items: out, Limit: limit, Offset: offset, Total: total})
+}
+
+// validLinkStatus reports whether s is an accepted list filter ("" = all).
+func validLinkStatus(s string) bool {
+	switch s {
+	case "", "all", repository.LinkStatusActive, repository.LinkStatusDisabled, repository.LinkStatusExpired:
+		return true
+	default:
+		return false
+	}
+}
+
+// updateLinkRequest is the full mutable state for PUT /api/links/:code.
+// expires_at null clears the expiry; is_active is required (PUT = full state).
+type updateLinkRequest struct {
+	ExpiresAt *time.Time `json:"expires_at"`
+	IsActive  *bool      `json:"is_active"`
+}
+
+// linkResponse is returned after mutating a single link.
+type linkResponse struct {
+	ShortCode   string     `json:"short_code"`
+	ShortURL    string     `json:"short_url"`
+	OriginalURL string     `json:"original_url"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+	IsActive    bool       `json:"is_active"`
+}
+
+// Update handles PUT /api/links/:code — owner-only edit of expiry + active state.
+//
+// @Summary      Update a short link
+// @Description  Replaces the mutable state: set/clear expires_at (null clears) and toggle is_active. Owner-only.
+// @Tags         links
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        code     path      string             true  "Short code"
+// @Param        request  body      updateLinkRequest  true  "expires_at (RFC 3339 or null) + is_active"
+// @Success      200      {object}  linkResponse
+// @Failure      400      {object}  response.Envelope  "invalid body"
+// @Failure      401      {object}  response.Envelope  "missing or invalid token"
+// @Failure      404      {object}  response.Envelope  "short link not found"
+// @Router       /api/links/{code} [put]
+func (h *LinkHandler) Update(c echo.Context) error {
+	owner, ok := appmw.UserIDFrom(c)
+	if !ok {
+		return response.Error(c, apperror.New(http.StatusUnauthorized, "UNAUTHORIZED", "not authenticated"))
+	}
+	var req updateLinkRequest
+	if err := c.Bind(&req); err != nil {
+		return response.Error(c, apperror.BadRequest("invalid request body"))
+	}
+	if req.IsActive == nil {
+		return response.Error(c, apperror.BadRequest("is_active is required"))
+	}
+
+	link, err := h.links.Update(c.Request().Context(), c.Param("code"), owner, req.ExpiresAt, *req.IsActive)
+	if err != nil {
+		return response.Error(c, err)
+	}
+	// Disabling must drop the dedup fast-path, else re-creating the same URL
+	// short-circuits to the now-disabled (410-ing) link instead of a fresh one.
+	if !link.IsActive {
+		h.dedup.Forget(c.Request().Context(), owner, link.OriginalURL)
+	}
+	return response.Success(c, http.StatusOK, linkResponse{
+		ShortCode:   link.ShortCode,
+		ShortURL:    h.baseURL + "/" + link.ShortCode,
+		OriginalURL: link.OriginalURL,
+		ExpiresAt:   link.ExpiresAt,
+		IsActive:    link.IsActive,
+	})
+}
+
+// Delete handles DELETE /api/links/:code — owner-only hard delete.
+//
+// @Summary      Delete a short link
+// @Description  Permanently deletes the link and its clicks (cascade). Owner-only.
+// @Tags         links
+// @Security     BearerAuth
+// @Param        code  path  string  true  "Short code"
+// @Success      204   "deleted"
+// @Failure      401   {object}  response.Envelope  "missing or invalid token"
+// @Failure      404   {object}  response.Envelope  "short link not found"
+// @Router       /api/links/{code} [delete]
+func (h *LinkHandler) Delete(c echo.Context) error {
+	owner, ok := appmw.UserIDFrom(c)
+	if !ok {
+		return response.Error(c, apperror.New(http.StatusUnauthorized, "UNAUTHORIZED", "not authenticated"))
+	}
+	link, err := h.links.Delete(c.Request().Context(), c.Param("code"), owner)
+	if err != nil {
+		return response.Error(c, err)
+	}
+	// Drop the dedup fast-path entry so the same URL can be shortened again.
+	h.dedup.Forget(c.Request().Context(), owner, link.OriginalURL)
+	return c.NoContent(http.StatusNoContent)
 }
 
 // atoiDefault parses s as an int, returning def when empty or invalid.

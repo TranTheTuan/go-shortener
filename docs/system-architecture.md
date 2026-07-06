@@ -22,11 +22,12 @@
 │  │  - Keycloak Auth (Bearer token validation + JIT prov.)  │  │
 │  └──────────────────────────────────────────────────────────┘  │
 │                           │                                     │
-│  ┌────────────┬──────────┬──────┬──────┬──────────────────┐   │
-│  ▼            ▼          ▼      ▼      ▼                  ▼   │
-│ Health   AuthHandler  UserHandler LinkHandler  RedirectHandler  │
-│Handler   (/auth/me,   (list,get)  (create,     (/:code)        │
-│          returns              stats)                        │
+│  ┌────────────┬──────────┬──────┬────────────────┬──────────────┐   │
+│  ▼            ▼          ▼      ▼                ▼              ▼   │
+│ Health   AuthHandler  UserHandler LinkHandler (CRUD)  RedirectHandler  │
+│Handler   (/auth/me,   (list,get)  (POST/PUT/     (/:code)        │
+│          returns              DELETE, list)                      │
+│          synced user)                                            │                        │
 │          synced user)                                       │
 └──────────────────────────┬──────────────────────────────────────┘
                            │
@@ -170,7 +171,8 @@ RedirectHandler.Redirect
     │       │
     │       ├──► Query PostgreSQL (LinkRepository.GetByCode)
     │       │    ├──► Not found: return 404
-    │       │    ├──► Found but expired: return 410
+    │       │    ├──► Found but disabled: return 410 (never cached)
+    │       │    ├──► Found but expired: return 410 (never cached)
     │       │    └──► Found and valid: cache + return URL
     │       │
     │       ├──► Cache in Redis (TTL from SHORTENER_CACHE_TTL)
@@ -189,7 +191,121 @@ RedirectHandler.Redirect
 **Performance**: Sub-100ms on cache hit  
 **Analytics**: Async click recording (acceptable loss)
 
-### 3. Get User Profile (GET /auth/me)
+### 3. Update Link (PUT /api/links/:code)
+
+```
+Client Request (with Bearer token, owner-only)
+    │
+    ▼
+KeycloakMiddleware.Verify
+    │
+    └──► Extract user ID, validate token (same as /auth/me flow)
+        │
+        ▼
+    LinkHandler.Update
+        │
+        ├──► Parse short code from URL
+        │
+        ├──► Parse request body: {expires_at: RFC3339|null, is_active: bool}
+        │
+        ├──► Call LinkService.Update(code, userID, expires_at, is_active)
+        │       │
+        │       ├──► Query LinkRepository.GetByCodeAndUserID(code, userID)
+        │       │    ├──► Not found or non-owner: return 404 (hide existence)
+        │       │    └──► Found: proceed
+        │       │
+        │       ├──► Validate mutable state
+        │       │    └──► is_active required; expires_at can be null
+        │       │
+        │       ├──► Update link in PostgreSQL
+        │       │
+        │       ├──► Evict from Redis cache (LinkCacheRepository.Delete)
+        │       │
+        │       └──► Return updated Link object
+        │
+        └──► Format response {"data": {short_code, is_active, expires_at, ...}}
+```
+
+**Result**: HTTP 200 with updated link  
+**Authorization**: Owner-only (404 for non-owner/missing)  
+**Cache**: Link evicted from Redis on every update  
+**Validation**: is_active required, expires_at can be RFC3339 or null
+
+### 4. Delete Link (DELETE /api/links/:code)
+
+```
+Client Request (with Bearer token, owner-only)
+    │
+    ▼
+KeycloakMiddleware.Verify
+    │
+    └──► Extract user ID, validate token
+        │
+        ▼
+    LinkHandler.Delete
+        │
+        ├──► Parse short code from URL
+        │
+        ├──► Call LinkService.Delete(code, userID)
+        │       │
+        │       ├──► Query LinkRepository.GetByCodeAndUserID(code, userID)
+        │       │    ├──► Not found or non-owner: return 404
+        │       │    └──► Found: proceed
+        │       │
+        │       ├──► Hard delete from PostgreSQL (cascades clicks via FK)
+        │       │
+        │       ├──► Evict from Redis cache (LinkCacheRepository.Delete)
+        │       │
+        │       ├──► Evict from dedup cache (DuplicateURLCheck key)
+        │       │    └──► Allows re-creating same URL later
+        │       │
+        │       └──► Return empty result
+        │
+        └──► Return HTTP 204 No Content
+```
+
+**Result**: HTTP 204 (no response body)  
+**Authorization**: Owner-only (404 for non-owner/missing)  
+**Cascade**: Clicks deleted via FK foreign key constraint  
+**Cache**: Link + dedup both evicted  
+**Idempotent**: Safe to retry (second DELETE on missing code → 404)
+
+### 5. List Links with Status Filter (GET /api/links?status=active|disabled|expired)
+
+```
+Client Request (with Bearer token)
+    │
+    ▼
+KeycloakMiddleware.Verify
+    │
+    └──► Extract user ID
+        │
+        ▼
+    LinkHandler.List
+        │
+        ├──► Parse query param: ?status=active|disabled|expired (optional)
+        │
+        ├──► Call LinkService.ListByUserID(userID, status)
+        │       │
+        │       ├──► Query PostgreSQL with status filter
+        │       │    ├──► status=active: is_active=true AND expires_at > now
+        │       │    ├──► status=disabled: is_active=false
+        │       │    ├──► status=expired: expires_at <= now (regardless of is_active)
+        │       │    └──► status=null/empty: all links (no filter)
+        │       │
+        │       ├──► Count total matching rows
+        │       │
+        │       ├──► Return list + count
+        │
+        └──► Format response {"data": [{short_code, is_active, expires_at, ...}], "total": N}
+```
+
+**Result**: HTTP 200 with filtered list  
+**Filter precedence**: disabled > expired > active (mutually exclusive buckets)  
+**Count**: Matches filter (not total across all statuses)  
+**Status unknown**: Return 400 (invalid filter value)
+
+### 6. Get User Profile (GET /auth/me)
 
 ```
 Client Request (with Bearer token from Keycloak)
@@ -251,6 +367,7 @@ short_code   VARCHAR(16) UNIQUE NOT NULL
 original_url TEXT NOT NULL
 user_id      BIGINT NOT NULL FK→users(id) CASCADE
 expires_at   TIMESTAMPTZ (nullable)
+is_active    BOOLEAN NOT NULL DEFAULT true          (added migration 11)
 created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 ```
 
@@ -280,14 +397,21 @@ user_agent   TEXT
 **Key format**: `link:{code}` (e.g., `link:Ab3xY7q`)  
 **Value**: Original URL string  
 **TTL**: 24 hours (configurable via `SHORTENER_CACHE_TTL`)  
-**Set on**: First redirect (lazy caching)  
-**Eviction**: Automatic on TTL; explicit on link deletion (if implemented)
+**Set on**: First redirect (lazy caching, only for valid active links)  
+**Eviction**: Automatic on TTL; explicit on link update/delete (mandatory)
+
+**What is NOT cached**:
+- Disabled links (is_active=false) — always query PostgreSQL, returns 410 Gone
+- Expired links — always query PostgreSQL, returns 410 Gone (expiry check not cached)
 
 **Flow**:
 1. GET `/:code`
 2. Try Redis: `linkCacheRepo.Get(code)`
-3. If hit: return cached URL
-4. If miss: query PostgreSQL, cache result, return
+3. If hit: return cached URL (skip status checks, assume fresh)
+4. If miss: query PostgreSQL, check is_active + expiry
+   - If disabled or expired: return 410 (do not cache)
+   - If valid: cache result, return URL
+5. On PUT/DELETE: evict cache (LinkCacheRepository.Delete)
 
 **Failure mode**: If Redis is down, fall back to PostgreSQL (no redirect failure)
 
@@ -304,6 +428,9 @@ user_agent   TEXT
 |----------|--------|-------------|
 | GET /auth/me | Keycloak JWT | Valid Keycloak access token (RS256) |
 | POST /api/links | Keycloak JWT | Valid Keycloak access token |
+| GET /api/links | Keycloak JWT | Valid Keycloak access token (owner sees only own links) |
+| PUT /api/links/:code | Keycloak JWT | Valid Keycloak access token (owner-only, 404 for non-owner) |
+| DELETE /api/links/:code | Keycloak JWT | Valid Keycloak access token (owner-only, 404 for non-owner) |
 | GET /api/links/:code/stats | Keycloak JWT | Valid Keycloak access token |
 | GET /users | Keycloak JWT | Valid Keycloak access token |
 | GET /users/:id | Keycloak JWT | Valid Keycloak access token |
@@ -423,7 +550,7 @@ Future enhancements:
 
 ---
 
-**Last Updated**: 2026-06-30  
+**Last Updated**: 2026-07-06  
 **Diagrams**: ASCII for documentation clarity  
 **Status**: Production-ready single-instance architecture  
 **Auth Model**: Keycloak OIDC resource server (v1.1+)

@@ -13,6 +13,29 @@ const text = (id, value) => {
   $(id).textContent = value;
 };
 
+// confirmDelete shows a custom modal and resolves true if the user confirms.
+const confirmDelete = (shortURL) => new Promise((resolve) => {
+  const backdrop = $("confirm-modal");
+  $("modal-body").textContent = shortURL;
+  backdrop.hidden = false;
+
+  const cleanup = (result) => {
+    backdrop.hidden = true;
+    off($("modal-confirm"), "click", onOk);
+    off($("modal-cancel"),  "click", onCancel);
+    off(backdrop,           "click", onBackdrop);
+    resolve(result);
+  };
+  const onOk       = () => cleanup(true);
+  const onCancel   = () => cleanup(false);
+  const onBackdrop = (e) => { if (e.target === backdrop) cleanup(false); };
+
+  $("modal-confirm").addEventListener("click", onOk);
+  $("modal-cancel").addEventListener("click",  onCancel);
+  backdrop.addEventListener("click", onBackdrop);
+});
+const off = (el, ev, fn) => el.removeEventListener(ev, fn);
+
 async function main() {
   let cfg;
   try {
@@ -91,7 +114,22 @@ function wireNav() {
     if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
   };
 
-  items.forEach((b) => (b.onclick = () => show(b.dataset.view)));
+  const closeSidebar = () => {
+    document.querySelector(".sidebar").classList.remove("open");
+    $("sidebar-overlay").classList.remove("open");
+    $("hamburger").setAttribute("aria-expanded", "false");
+  };
+
+  // Close sidebar on nav click (mobile UX).
+  items.forEach((b) => (b.onclick = () => { show(b.dataset.view); closeSidebar(); }));
+
+  $("hamburger").addEventListener("click", () => {
+    const open = document.querySelector(".sidebar").classList.toggle("open");
+    $("sidebar-overlay").classList.toggle("open", open);
+    $("hamburger").setAttribute("aria-expanded", String(open));
+  });
+  $("sidebar-overlay").addEventListener("click", closeSidebar);
+
   show(location.hash.slice(1));
 }
 
@@ -224,11 +262,89 @@ function expiryLabel(expiresAt) {
   return d.getTime() < Date.now() ? "expired" : d.toLocaleDateString();
 }
 
-// wireLinks renders the user's paginated links and returns { reload }.
+// statusOf derives display status with precedence disabled > expired > active.
+function statusOf(it) {
+  if (!it.is_active) return "disabled";
+  if (it.expires_at && new Date(it.expires_at).getTime() < Date.now()) return "expired";
+  return "active";
+}
+
+// statusBadge builds a colored status pill.
+function statusBadge(kind) {
+  const span = document.createElement("span");
+  span.className = "badge badge-" + kind;
+  span.textContent = kind;
+  return span;
+}
+
+// actionBtn is a small labelled row-action button.
+function actionBtn(label, onClick) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "action";
+  b.textContent = label;
+  b.onclick = onClick;
+  return b;
+}
+
+// toLocalInput converts an ISO timestamp to a datetime-local input value (local tz).
+function toLocalInput(iso) {
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+// wireLinks renders the user's links (filtered + paginated) with row actions,
+// and returns { reload } so a new link created elsewhere refreshes the list.
 function wireLinks(api) {
   const PAGE = 20;
   let offset = 0;
   let total = 0;
+  let status = "";
+
+  // save PUTs the full mutable state (expiry + active); patch overrides fields.
+  const save = async (it, patch) => {
+    const body = { is_active: it.is_active, expires_at: it.expires_at ?? null, ...patch };
+    let res;
+    try {
+      res = await api("/api/links/" + encodeURIComponent(it.short_code), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      text("links-status", "Network error — please retry.");
+      return;
+    }
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      text("links-status", "Error: " + (j.error?.message || res.status));
+      return;
+    }
+    load();
+  };
+
+  const remove = async (it) => {
+    if (!await confirmDelete(it.short_url)) return;
+    let res;
+    try {
+      res = await api("/api/links/" + encodeURIComponent(it.short_code), { method: "DELETE" });
+    } catch {
+      text("links-status", "Network error — please retry.");
+      return;
+    }
+    if (res.status !== 204 && !res.ok) {
+      const j = await res.json().catch(() => ({}));
+      text("links-status", "Error: " + (j.error?.message || res.status));
+      return;
+    }
+    if (offset > 0 && total - 1 <= offset) offset -= PAGE; // step back if page emptied
+    load();
+  };
+
+  // One global listener closes all open row dropdowns on outside click.
+  document.addEventListener("click", () => {
+    document.querySelectorAll(".row-dropdown:not([hidden])").forEach((d) => (d.hidden = true));
+  });
 
   const render = (items) => {
     const body = $("links-body");
@@ -236,30 +352,110 @@ function wireLinks(api) {
     for (const it of items) {
       const tr = document.createElement("tr");
 
+      // Short: display code only; href goes through the shortener redirect.
       const short = document.createElement("td");
-      short.append(linkAnchor(it.short_url), copyButton(it.short_url));
+      const a = document.createElement("a");
+      a.href = it.short_url; a.textContent = it.short_code;
+      a.target = "_blank"; a.rel = "noopener";
+      short.append(a, copyButton(it.short_url));
       tr.append(short);
 
+      // Original — hidden on narrow screens via .col-original.
       const original = document.createElement("td");
-      original.className = "truncate";
-      original.textContent = it.original_url;
-      original.title = it.original_url;
+      original.className = "truncate col-original";
+      original.textContent = it.original_url; original.title = it.original_url;
       tr.append(original);
 
-      for (const value of [it.total_clicks, new Date(it.created_at).toLocaleDateString(), expiryLabel(it.expires_at)]) {
-        const td = document.createElement("td");
-        td.textContent = value;
-        tr.append(td);
-      }
+      const clicks = document.createElement("td");
+      clicks.textContent = it.total_clicks;
+      tr.append(clicks);
+
+      const st = document.createElement("td");
+      st.append(statusBadge(statusOf(it)));
+      tr.append(st);
+
+      // Expires label only — hidden on narrow screens via .col-expires.
+      const exp = document.createElement("td");
+      exp.className = "col-expires";
+      exp.textContent = expiryLabel(it.expires_at);
+      tr.append(exp);
+
+      // Actions: single ⋮ dropdown for all three operations.
+      const actions = document.createElement("td");
+      actions.className = "actions";
+      const menu = document.createElement("div");
+      menu.className = "menu";
+      const menuBtn = document.createElement("button");
+      menuBtn.type = "button";
+      menuBtn.className = "action-menu-btn";
+      menuBtn.setAttribute("aria-haspopup", "true");
+      menuBtn.setAttribute("aria-expanded", "false");
+      menuBtn.textContent = "⋮";
+      const drop = document.createElement("div");
+      drop.className = "dropdown row-dropdown";
+      drop.hidden = true;
+
+      menuBtn.onclick = (e) => {
+        e.stopPropagation();
+        const wasOpen = !drop.hidden;
+        document.querySelectorAll(".row-dropdown:not([hidden])").forEach((d) => (d.hidden = true));
+        drop.hidden = wasOpen;
+        menuBtn.setAttribute("aria-expanded", String(!wasOpen));
+      };
+
+      const close = () => { drop.hidden = true; menuBtn.setAttribute("aria-expanded", "false"); };
+
+      // Toggle enable/disable.
+      const toggleItem = document.createElement("button");
+      toggleItem.type = "button"; toggleItem.className = "dropdown-item";
+      toggleItem.textContent = it.is_active ? "Disable" : "Enable";
+      toggleItem.onclick = () => { close(); save(it, { is_active: !it.is_active }); };
+
+      // Edit expires — inserts an inline row below.
+      const expiresItem = document.createElement("button");
+      expiresItem.type = "button"; expiresItem.className = "dropdown-item";
+      expiresItem.textContent = "Edit expires";
+      expiresItem.onclick = () => {
+        close();
+        const next = tr.nextElementSibling;
+        if (next?.classList.contains("edit-expires-row")) { next.remove(); return; }
+        const editTr = document.createElement("tr");
+        editTr.className = "edit-expires-row";
+        const editTd = document.createElement("td");
+        editTd.colSpan = 6;
+        const input = document.createElement("input");
+        input.type = "datetime-local";
+        if (it.expires_at) input.value = toLocalInput(it.expires_at);
+        editTd.append(
+          input,
+          actionBtn("Save",   () => save(it, { expires_at: input.value ? new Date(input.value).toISOString() : null })),
+          actionBtn("Clear",  () => save(it, { expires_at: null })),
+          actionBtn("Cancel", () => editTr.remove()),
+        );
+        editTr.append(editTd);
+        tr.after(editTr);
+      };
+
+      // Delete.
+      const deleteItem = document.createElement("button");
+      deleteItem.type = "button"; deleteItem.className = "dropdown-item danger";
+      deleteItem.textContent = "Delete";
+      deleteItem.onclick = () => { close(); remove(it); };
+
+      drop.append(toggleItem, expiresItem, deleteItem);
+      menu.append(menuBtn, drop);
+      actions.append(menu);
+      tr.append(actions);
       body.append(tr);
     }
   };
 
-  const load = async () => {
+  async function load() {
     text("links-status", "Loading…");
     let res, json;
     try {
-      res = await api(`/api/links?limit=${PAGE}&offset=${offset}`);
+      const q = `/api/links?limit=${PAGE}&offset=${offset}` + (status ? `&status=${status}` : "");
+      res = await api(q);
       json = await res.json().catch(() => ({}));
     } catch {
       text("links-status", "Could not load your links.");
@@ -273,7 +469,7 @@ function wireLinks(api) {
     const items = json.data?.items ?? [];
     total = json.data?.total ?? 0;
     if (total === 0) {
-      text("links-status", "No links yet.");
+      text("links-status", status ? "No links with this status." : "No links yet.");
       $("links-table").hidden = true;
       $("links-pager").hidden = true;
       return;
@@ -286,8 +482,13 @@ function wireLinks(api) {
     text("page-info", `Showing ${offset + 1}–${offset + items.length} of ${total}`);
     $("prev").disabled = offset === 0;
     $("next").disabled = offset + PAGE >= total;
-  };
+  }
 
+  $("links-filter").onchange = () => {
+    status = $("links-filter").value;
+    offset = 0;
+    load();
+  };
   $("prev").onclick = () => {
     if (offset > 0) {
       offset -= PAGE;

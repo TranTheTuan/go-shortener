@@ -12,21 +12,25 @@ type mockLinkRepo struct {
 	createFn           func(ctx context.Context, link *repository.Link) (*repository.Link, error)
 	getByCodeFn        func(ctx context.Context, code string) (*repository.Link, error)
 	getByOwnerAndURLFn func(ctx context.Context, ownerID *int64, url string) (*repository.Link, error)
-	listByOwnerFn      func(ctx context.Context, ownerID int64, limit, offset int) ([]*repository.OwnedLink, error)
-	countByOwnerFn     func(ctx context.Context, ownerID int64) (int64, error)
+	listByOwnerFn      func(ctx context.Context, ownerID int64, status string, now time.Time, limit, offset int) ([]*repository.OwnedLink, error)
+	countByOwnerFn     func(ctx context.Context, ownerID int64, status string, now time.Time) (int64, error)
+	deleteFn           func(ctx context.Context, id int64) error
+	updateFn           func(ctx context.Context, id int64, fields map[string]any) error
 	createCalls        int
+	deleteCalls        int
+	updateCalls        int
 }
 
-func (m *mockLinkRepo) ListByOwner(ctx context.Context, ownerID int64, limit, offset int) ([]*repository.OwnedLink, error) {
+func (m *mockLinkRepo) ListByOwner(ctx context.Context, ownerID int64, status string, now time.Time, limit, offset int) ([]*repository.OwnedLink, error) {
 	if m.listByOwnerFn != nil {
-		return m.listByOwnerFn(ctx, ownerID, limit, offset)
+		return m.listByOwnerFn(ctx, ownerID, status, now, limit, offset)
 	}
 	return nil, nil
 }
 
-func (m *mockLinkRepo) CountByOwner(ctx context.Context, ownerID int64) (int64, error) {
+func (m *mockLinkRepo) CountByOwner(ctx context.Context, ownerID int64, status string, now time.Time) (int64, error) {
 	if m.countByOwnerFn != nil {
-		return m.countByOwnerFn(ctx, ownerID)
+		return m.countByOwnerFn(ctx, ownerID, status, now)
 	}
 	return 0, nil
 }
@@ -47,10 +51,27 @@ func (m *mockLinkRepo) GetByOwnerAndURL(ctx context.Context, ownerID *int64, url
 	return nil, repository.ErrNotFound
 }
 
+func (m *mockLinkRepo) Delete(ctx context.Context, id int64) error {
+	m.deleteCalls++
+	if m.deleteFn != nil {
+		return m.deleteFn(ctx, id)
+	}
+	return nil
+}
+
+func (m *mockLinkRepo) Update(ctx context.Context, id int64, fields map[string]any) error {
+	m.updateCalls++
+	if m.updateFn != nil {
+		return m.updateFn(ctx, id, fields)
+	}
+	return nil
+}
+
 // mockLinkCacheRepository is an in-memory test double for repository.LinkCacheRepository.
 type mockLinkCacheRepository struct {
-	store    map[string]*repository.Link
-	setCalls int
+	store       map[string]*repository.Link
+	setCalls    int
+	deleteCalls int
 }
 
 func (m *mockLinkCacheRepository) Set(_ context.Context, link *repository.Link, _ time.Duration) error {
@@ -71,6 +92,14 @@ func (m *mockLinkCacheRepository) Get(_ context.Context, code string) (*reposito
 		return nil, repository.ErrNotFound
 	}
 	return link, nil
+}
+
+func (m *mockLinkCacheRepository) Delete(_ context.Context, code string) error {
+	if m.store != nil {
+		delete(m.store, code)
+	}
+	m.deleteCalls++
+	return nil
 }
 
 // mockUserRepo is an in-memory test double for repository.UserRepository. It

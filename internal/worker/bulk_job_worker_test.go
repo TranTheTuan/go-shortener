@@ -58,8 +58,14 @@ func (m *mockLinkService) Create(_ context.Context, in service.CreateLinkInput) 
 func (m *mockLinkService) Resolve(_ context.Context, _ string) (*repository.Link, error) {
 	return nil, nil
 }
-func (m *mockLinkService) ListByOwner(_ context.Context, _ int64, _, _ int) ([]*repository.OwnedLink, int64, error) {
+func (m *mockLinkService) ListByOwner(_ context.Context, _ int64, _ string, _, _ int) ([]*repository.OwnedLink, int64, error) {
 	return nil, 0, nil
+}
+func (m *mockLinkService) Delete(_ context.Context, _ string, _ int64) (*repository.Link, error) {
+	return nil, nil
+}
+func (m *mockLinkService) Update(_ context.Context, _ string, _ int64, _ *time.Time, _ bool) (*repository.Link, error) {
+	return nil, nil
 }
 
 type mockStorage struct {
