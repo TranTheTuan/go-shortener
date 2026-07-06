@@ -16,10 +16,10 @@ import (
 // --- minimal mocks ---
 
 type mockBulkRepo struct {
-	job          *repository.BulkJob
-	statusCalls  []string
-	resultKey    string
-	doneRows     int
+	job         *repository.BulkJob
+	statusCalls []string
+	resultKey   string
+	doneRows    int
 }
 
 func (m *mockBulkRepo) CreateWithOutbox(_ context.Context, job *repository.BulkJob) (*repository.BulkJob, error) {

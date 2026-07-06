@@ -31,9 +31,9 @@ type BulkJob struct {
 
 // BulkJobOutbox is the transactional outbox entry for reliable Kafka delivery.
 type BulkJobOutbox struct {
-	ID        int64     `gorm:"primaryKey"`
-	JobID     int64     `gorm:"not null"`
-	Published bool      `gorm:"not null;default:false"`
+	ID        int64 `gorm:"primaryKey"`
+	JobID     int64 `gorm:"not null"`
+	Published bool  `gorm:"not null;default:false"`
 	CreatedAt time.Time
 }
 

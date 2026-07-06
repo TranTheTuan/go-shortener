@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	maxBulkRows    = 10_000
-	presignPutTTL  = 15 * time.Minute
-	resultGetTTL   = time.Hour
+	maxBulkRows   = 10_000
+	presignPutTTL = 15 * time.Minute
+	resultGetTTL  = time.Hour
 )
 
 // BulkJobService handles presign, confirm, get, list, and template operations.
