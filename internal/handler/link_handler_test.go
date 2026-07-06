@@ -114,9 +114,9 @@ func TestLinkHandler_List_StatusFilter(t *testing.T) {
 	h := NewLinkHandler(svc, nil, nil, "http://sho.rt")
 
 	cases := []struct {
-		query       string
-		wantStatus  string
-		wantCode    int
+		query      string
+		wantStatus string
+		wantCode   int
 	}{
 		{"?status=active", "active", http.StatusOK},
 		{"?status=disabled", "disabled", http.StatusOK},
@@ -147,7 +147,6 @@ func TestLinkHandler_List_StatusFilter(t *testing.T) {
 // here since DedupCache is a concrete type, not an interface. Full handler Delete testing
 // would require integrating with a real or well-mocked DedupCache with Redis.
 // For now, we test the non-dedup Delete/Update scenarios instead.
-
 
 func TestLinkHandler_Update_Valid(t *testing.T) {
 	futureTime := time.Now().Add(time.Hour)
@@ -255,5 +254,3 @@ func TestLinkHandler_Update_NotFound(t *testing.T) {
 		t.Errorf("status = %d, want 404", rec.Code)
 	}
 }
-
-
