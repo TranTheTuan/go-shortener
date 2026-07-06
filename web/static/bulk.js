@@ -181,10 +181,10 @@ async function loadJobs(api) {
     return;
   }
   if (res.status === 404) {
-    $("bulk").hidden = true; // R2 disabled server-side — hide the whole feature
+    $("bulk-nav").hidden = true; // R2 disabled server-side — hide the Bulk tab
     return;
   }
-  $("bulk").hidden = false;
+  $("bulk-nav").hidden = false;
 
   const json = await res.json().catch(() => ({}));
   const jobs = json.data ?? [];
