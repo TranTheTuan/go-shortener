@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
   <link rel="stylesheet" href="/static/styles.css" />
   <!-- Apply the saved theme before first paint to avoid a flash. Light is default. -->
   <script>
@@ -20,7 +21,7 @@
   <!-- Signed-out: centered login card -->
   <main id="signed-out" class="auth-card" hidden>
     <div class="brand">
-      <span class="brand-mark" aria-hidden="true">↗</span>
+      <span class="brand-mark" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" width="24" height="24"><rect x="5" y="16" width="14" height="8" rx="4" transform="rotate(-45 12 20)" stroke="#fff" stroke-width="2.2" fill="none"/><rect x="13" y="8" width="14" height="8" rx="4" transform="rotate(-45 20 12)" stroke="#fff" stroke-width="2.2" fill="none"/></svg></span>
       <span class="brand-name">go<span class="slash">/</span>short</span>
     </div>
     <p class="lead">Shorten, track, and bulk-manage your links — one fast, tidy workspace.</p>
@@ -31,7 +32,7 @@
   <div id="app" class="shell" hidden>
     <aside class="sidebar">
       <div class="brand">
-        <span class="brand-mark" aria-hidden="true">↗</span>
+        <span class="brand-mark" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" width="24" height="24"><rect x="5" y="16" width="14" height="8" rx="4" transform="rotate(-45 12 20)" stroke="#fff" stroke-width="2.2" fill="none"/><rect x="13" y="8" width="14" height="8" rx="4" transform="rotate(-45 20 12)" stroke="#fff" stroke-width="2.2" fill="none"/></svg></span>
         <span class="brand-name">go<span class="slash">/</span>short</span>
       </div>
       <nav class="nav">
@@ -57,9 +58,14 @@
       </div>
     </aside>
 
+    <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
     <div class="main">
       <header class="topbar">
         <div class="topbar-head">
+          <button class="hamburger" id="hamburger" type="button" aria-label="Open menu" aria-expanded="false">
+            <span></span><span></span><span></span>
+          </button>
           <span class="eyebrow">Workspace</span>
           <h2 id="view-title">Create link</h2>
         </div>
@@ -105,7 +111,7 @@
             <p id="links-status" class="muted"></p>
             <table id="links-table" hidden>
               <thead>
-                <tr><th>Short</th><th>Original</th><th>Clicks</th><th>Status</th><th>Expires</th><th>Actions</th></tr>
+                <tr><th>Short</th><th class="col-original">Original</th><th>Clicks</th><th>Status</th><th class="col-expires">Expires</th><th>Actions</th></tr>
               </thead>
               <tbody id="links-body"></tbody>
             </table>
@@ -156,6 +162,18 @@
             </table>
           </div>
         </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm-delete modal -->
+  <div id="confirm-modal" class="modal-backdrop" hidden aria-modal="true" role="dialog" aria-labelledby="modal-title">
+    <div class="modal">
+      <h3 id="modal-title" class="modal-title">Delete link?</h3>
+      <p id="modal-body" class="modal-body"></p>
+      <div class="modal-actions">
+        <button id="modal-cancel" type="button">Cancel</button>
+        <button id="modal-confirm" type="button" class="danger">Delete</button>
       </div>
     </div>
   </div>
