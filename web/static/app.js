@@ -224,11 +224,104 @@ function expiryLabel(expiresAt) {
   return d.getTime() < Date.now() ? "expired" : d.toLocaleDateString();
 }
 
-// wireLinks renders the user's paginated links and returns { reload }.
+// statusOf derives display status with precedence disabled > expired > active.
+function statusOf(it) {
+  if (!it.is_active) return "disabled";
+  if (it.expires_at && new Date(it.expires_at).getTime() < Date.now()) return "expired";
+  return "active";
+}
+
+// statusBadge builds a colored status pill.
+function statusBadge(kind) {
+  const span = document.createElement("span");
+  span.className = "badge badge-" + kind;
+  span.textContent = kind;
+  return span;
+}
+
+// actionBtn is a small labelled row-action button.
+function actionBtn(label, onClick) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "action";
+  b.textContent = label;
+  b.onclick = onClick;
+  return b;
+}
+
+// toLocalInput converts an ISO timestamp to a datetime-local input value (local tz).
+function toLocalInput(iso) {
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+// wireLinks renders the user's links (filtered + paginated) with row actions,
+// and returns { reload } so a new link created elsewhere refreshes the list.
 function wireLinks(api) {
   const PAGE = 20;
   let offset = 0;
   let total = 0;
+  let status = "";
+
+  // save PUTs the full mutable state (expiry + active); patch overrides fields.
+  const save = async (it, patch) => {
+    const body = { is_active: it.is_active, expires_at: it.expires_at ?? null, ...patch };
+    let res;
+    try {
+      res = await api("/api/links/" + encodeURIComponent(it.short_code), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      text("links-status", "Network error — please retry.");
+      return;
+    }
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      text("links-status", "Error: " + (j.error?.message || res.status));
+      return;
+    }
+    load();
+  };
+
+  const remove = async (it) => {
+    if (!confirm(`Delete ${it.short_url}?`)) return;
+    let res;
+    try {
+      res = await api("/api/links/" + encodeURIComponent(it.short_code), { method: "DELETE" });
+    } catch {
+      text("links-status", "Network error — please retry.");
+      return;
+    }
+    if (res.status !== 204 && !res.ok) {
+      const j = await res.json().catch(() => ({}));
+      text("links-status", "Error: " + (j.error?.message || res.status));
+      return;
+    }
+    if (offset > 0 && total - 1 <= offset) offset -= PAGE; // step back if page emptied
+    load();
+  };
+
+  // expiresCell shows the expiry with an inline "edit" that swaps to a datetime
+  // input + Save/Clear (PUT on either).
+  const expiresCell = (it, td) => {
+    td.textContent = "";
+    const label = document.createElement("span");
+    label.textContent = expiryLabel(it.expires_at);
+    const edit = actionBtn("edit", () => {
+      td.textContent = "";
+      const input = document.createElement("input");
+      input.type = "datetime-local";
+      if (it.expires_at) input.value = toLocalInput(it.expires_at);
+      td.append(
+        input,
+        actionBtn("save", () => save(it, { expires_at: input.value ? new Date(input.value).toISOString() : null })),
+        actionBtn("clear", () => save(it, { expires_at: null })),
+      );
+    });
+    td.append(label, edit);
+  };
 
   const render = (items) => {
     const body = $("links-body");
@@ -246,20 +339,36 @@ function wireLinks(api) {
       original.title = it.original_url;
       tr.append(original);
 
-      for (const value of [it.total_clicks, new Date(it.created_at).toLocaleDateString(), expiryLabel(it.expires_at)]) {
-        const td = document.createElement("td");
-        td.textContent = value;
-        tr.append(td);
-      }
+      const clicks = document.createElement("td");
+      clicks.textContent = it.total_clicks;
+      tr.append(clicks);
+
+      const st = document.createElement("td");
+      st.append(statusBadge(statusOf(it)));
+      tr.append(st);
+
+      const exp = document.createElement("td");
+      expiresCell(it, exp);
+      tr.append(exp);
+
+      const actions = document.createElement("td");
+      actions.className = "actions";
+      actions.append(
+        actionBtn(it.is_active ? "Disable" : "Enable", () => save(it, { is_active: !it.is_active })),
+        actionBtn("Delete", () => remove(it)),
+      );
+      tr.append(actions);
+
       body.append(tr);
     }
   };
 
-  const load = async () => {
+  async function load() {
     text("links-status", "Loading…");
     let res, json;
     try {
-      res = await api(`/api/links?limit=${PAGE}&offset=${offset}`);
+      const q = `/api/links?limit=${PAGE}&offset=${offset}` + (status ? `&status=${status}` : "");
+      res = await api(q);
       json = await res.json().catch(() => ({}));
     } catch {
       text("links-status", "Could not load your links.");
@@ -273,7 +382,7 @@ function wireLinks(api) {
     const items = json.data?.items ?? [];
     total = json.data?.total ?? 0;
     if (total === 0) {
-      text("links-status", "No links yet.");
+      text("links-status", status ? "No links with this status." : "No links yet.");
       $("links-table").hidden = true;
       $("links-pager").hidden = true;
       return;
@@ -286,8 +395,13 @@ function wireLinks(api) {
     text("page-info", `Showing ${offset + 1}–${offset + items.length} of ${total}`);
     $("prev").disabled = offset === 0;
     $("next").disabled = offset + PAGE >= total;
-  };
+  }
 
+  $("links-filter").onchange = () => {
+    status = $("links-filter").value;
+    offset = 0;
+    load();
+  };
   $("prev").onclick = () => {
     if (offset > 0) {
       offset -= PAGE;

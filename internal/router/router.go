@@ -88,6 +88,8 @@ func registerRoutes(e *echo.Echo, h Handlers, deps Deps) {
 	links.POST("", h.Link.Create, appmw.DuplicateURLCheck(deps.Dedup), appmw.QuotaCheck(deps.Quota))
 	links.GET("", h.Link.List)
 	links.GET("/:code/stats", h.Link.Stats)
+	links.PUT("/:code", h.Link.Update)
+	links.DELETE("/:code", h.Link.Delete)
 
 	// Bulk URL upload — only registered when R2 is configured.
 	if h.BulkJob != nil {

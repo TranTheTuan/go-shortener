@@ -55,8 +55,14 @@ type LinkService interface {
 	Create(ctx context.Context, in CreateLinkInput) (*repository.Link, bool, error)
 	Resolve(ctx context.Context, code string) (*repository.Link, error)
 	// ListByOwner returns a page of the user's links (with click counts) and the
-	// total count. limit/offset are clamped via ClampPaging.
-	ListByOwner(ctx context.Context, ownerID int64, limit, offset int) ([]*repository.OwnedLink, int64, error)
+	// total count. status filters the set ("" = all); limit/offset are clamped.
+	ListByOwner(ctx context.Context, ownerID int64, status string, limit, offset int) ([]*repository.OwnedLink, int64, error)
+	// Delete removes the owner's link by code (hard delete). Returns the deleted
+	// link so the caller can drop its dedup entry. NotFound if missing/non-owner.
+	Delete(ctx context.Context, code string, ownerID int64) (*repository.Link, error)
+	// Update replaces a link's mutable state (expiry + active) for its owner and
+	// returns the updated link. NotFound if missing/non-owner.
+	Update(ctx context.Context, code string, ownerID int64, expiresAt *time.Time, isActive bool) (*repository.Link, error)
 }
 
 type linkService struct {
@@ -94,16 +100,18 @@ func (s *linkService) Create(ctx context.Context, in CreateLinkInput) (*reposito
 		return nil, false, apperror.BadRequest("expires_at must be in the future")
 	}
 
-	// Dedup: reuse this owner's existing non-expired link for the same URL.
+	// Dedup: reuse this owner's existing non-expired, ACTIVE link for the same
+	// URL. A disabled link must not be reused (nor cached — Resolve serves cache
+	// hits without re-checking is_active), so fall through and mint a fresh one.
 	existing, err := s.repo.GetByOwnerAndURL(ctx, in.OwnerID, target)
 	if err == nil {
 		notExpired := existing.ExpiresAt == nil || existing.ExpiresAt.After(now)
-		if notExpired {
+		if notExpired && existing.IsActive {
 			s.cacheSet(ctx, existing)
 			return existing, true, nil // reused
 		}
 	}
-	// ErrNotFound or expired link → fall through to create new.
+	// ErrNotFound, expired, or disabled link → fall through to create new.
 
 	// No existing link to reuse: a new link would be created, so enforce quota.
 	if in.QuotaExhausted {
@@ -153,25 +161,81 @@ func (s *linkService) Resolve(ctx context.Context, code string) (*repository.Lin
 	if link.ExpiresAt != nil && link.ExpiresAt.Before(s.now().UTC()) {
 		return nil, apperror.Gone("short link has expired")
 	}
+	// Disabled links stop redirecting. Checked before caching so an inactive
+	// link is never cached; re-enabling works on the next resolve.
+	if !link.IsActive {
+		return nil, apperror.Gone("short link is disabled")
+	}
 
 	s.cacheSet(ctx, link)
 	return link, nil
 }
 
 // ListByOwner returns a clamped page of the owner's links (with click counts)
-// plus the total number of links they own.
-func (s *linkService) ListByOwner(ctx context.Context, ownerID int64, limit, offset int) ([]*repository.OwnedLink, int64, error) {
+// plus the total matching the status filter.
+func (s *linkService) ListByOwner(ctx context.Context, ownerID int64, status string, limit, offset int) ([]*repository.OwnedLink, int64, error) {
 	limit, offset = ClampPaging(limit, offset)
+	now := s.now().UTC()
 
-	items, err := s.repo.ListByOwner(ctx, ownerID, limit, offset)
+	items, err := s.repo.ListByOwner(ctx, ownerID, status, now, limit, offset)
 	if err != nil {
 		return nil, 0, apperror.Internal(err)
 	}
-	total, err := s.repo.CountByOwner(ctx, ownerID)
+	total, err := s.repo.CountByOwner(ctx, ownerID, status, now)
 	if err != nil {
 		return nil, 0, apperror.Internal(err)
 	}
 	return items, total, nil
+}
+
+// ownedByCode fetches a link by code and verifies the caller owns it. Missing,
+// unowned, and foreign links all map to NotFound (never leak existence).
+func (s *linkService) ownedByCode(ctx context.Context, code string, ownerID int64) (*repository.Link, error) {
+	link, err := s.repo.GetByCode(ctx, code)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil, apperror.NotFound("short link not found")
+	}
+	if err != nil {
+		return nil, apperror.Internal(err)
+	}
+	if link.UserID == nil || *link.UserID != ownerID {
+		return nil, apperror.NotFound("short link not found")
+	}
+	return link, nil
+}
+
+// Delete hard-deletes the owner's link and evicts its cache entry. Returns the
+// deleted link so the caller can drop the matching dedup entry.
+func (s *linkService) Delete(ctx context.Context, code string, ownerID int64) (*repository.Link, error) {
+	link, err := s.ownedByCode(ctx, code, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.Delete(ctx, link.ID); err != nil {
+		return nil, apperror.Internal(err)
+	}
+	s.cacheDelete(ctx, code)
+	return link, nil
+}
+
+// Update replaces a link's mutable state (expiry + active flag). A field map is
+// passed so a nil expiry clears it. Evicts the cache so the redirect path
+// re-reads the new state. Unlike Create, a past expires_at is allowed on
+// purpose — editing the expiry to the past is a valid "expire now" (Resolve
+// then returns Gone and never caches it). ponytail: intentional, no guard.
+func (s *linkService) Update(ctx context.Context, code string, ownerID int64, expiresAt *time.Time, isActive bool) (*repository.Link, error) {
+	link, err := s.ownedByCode(ctx, code, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	fields := map[string]any{"is_active": isActive, "expires_at": expiresAt}
+	if err := s.repo.Update(ctx, link.ID, fields); err != nil {
+		return nil, apperror.Internal(err)
+	}
+	s.cacheDelete(ctx, code)
+	link.IsActive = isActive
+	link.ExpiresAt = expiresAt
+	return link, nil
 }
 
 // cacheTTLFor computes the Redis TTL for a link.
@@ -197,6 +261,14 @@ func (s *linkService) cacheSet(ctx context.Context, link *repository.Link) {
 		return
 	}
 	_ = s.cache.Set(ctx, link, ttl)
+}
+
+// cacheDelete evicts a code from the cache; best-effort (never blocks a mutation).
+func (s *linkService) cacheDelete(ctx context.Context, code string) {
+	if s.cache == nil {
+		return
+	}
+	_ = s.cache.Delete(ctx, code)
 }
 
 // cacheGet returns the cached Link (with ID populated) or nil on any miss or error.

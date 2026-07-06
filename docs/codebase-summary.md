@@ -226,7 +226,7 @@ Responsibility: Data access abstractions (PostgreSQL + Redis).
 | Repository | Storage | Key Methods |
 |------------|---------|------------|
 | `UserRepository` | PostgreSQL | GetByID, GetByEmail, GetByUsername, Create, Update, Delete, List |
-| `LinkRepository` | PostgreSQL | GetByCode, GetByURL, Create, Update, Delete |
+| `LinkRepository` | PostgreSQL | GetByCode, GetByURL, GetByCodeAndUserID, Create, Update, Delete, ListByUserID (with status filter) |
 | `LinkCacheRepository` | Redis | Get (by code), Set (with TTL), Delete |
 | `ClickRepository` | PostgreSQL | Create (insert click event), GetStats (by link) |
 | `RefreshTokenRepository` | PostgreSQL | Create, GetByHash, UpdateRevokedAt, Delete |
@@ -246,7 +246,7 @@ Responsibility: Business logic, validation, orchestration.
 | Service | Methods | Logic |
 |---------|---------|-------|
 | `UserService` | GetByID, List | User read operations |
-| `LinkService` | Create, Resolve | Link CRUD + cache-first resolution + collision retry |
+| `LinkService` | Create, Resolve, Update, Delete, ListByUserID | Link CRUD + cache-first resolution + collision retry + status filtering |
 | `AnalyticsService` | RecordClick, GetStats | Click recording (async) + stats |
 | `AuthService` | Register, Login, Refresh, Logout | Auth flow + token rotation + bcrypt |
 | (Implicit) | | All services take repository interfaces |
@@ -268,8 +268,8 @@ Responsibility: HTTP request parsing, service invocation, response formatting.
 |---------|-----------|---------|
 | `HealthHandler` | GET /healthz | Health() |
 | `UserHandler` | GET /users, GET /users/:id | List, Get |
-| `LinkHandler` | POST /api/links, GET /api/links/:code/stats | Create, Stats |
-| `RedirectHandler` | GET /:code | Redirect (302) |
+| `LinkHandler` | POST/PUT/DELETE /api/links, GET /api/links?status=… | Create, Update, Delete, List with filter |
+| `RedirectHandler` | GET /:code | Redirect (302 or 410 if disabled) |
 | `AuthHandler` | POST /auth/* | Register, Login, Refresh, Logout, Me |
 
 **Pattern**:
@@ -334,14 +334,14 @@ Responsibility: Cryptographic random base62 code generation.
 ---
 
 ### 12. Database Schema
-**Files**: `migrations/000{1-5}*.sql` (5 migrations)
+**Files**: `migrations/000{1-5,9,11}*.sql` (7 migrations)
 
 ```
 Migration 1: users table
   - id, name, email (UNIQUE), created_at, updated_at
 
 Migration 2: links table
-  - id, short_code (UNIQUE), original_url, expires_at, created_at
+  - id, short_code (UNIQUE), original_url, user_id (FK), expires_at, is_active (added in migration 11), created_at
 
 Migration 3: clicks table
   - id, link_id (FK), clicked_at, referrer, ip_address, user_agent
@@ -352,6 +352,14 @@ Migration 4: Alter users
 
 Migration 5: refresh_tokens table
   - id, user_id (FK), token_hash (UNIQUE), expires_at, revoked_at, created_at
+
+Migration 9: Keycloak auth
+  - Add keycloak_sub (UNIQUE) to users
+  - Drop password_hash + refresh_tokens table
+
+Migration 11: Link management (is_active)
+  - Add is_active BOOL NOT NULL DEFAULT true to links
+  - Supports enable/disable without hard delete
 ```
 
 ---
@@ -390,14 +398,14 @@ Migration 5: refresh_tokens table
 - ✅ Click analytics (async recording)
 - ✅ Redis caching (cache-first link resolution)
 - ✅ API Key authentication (fail-closed)
-- ✅ Swagger/OpenAPI documentation
+- ✅ Keycloak OIDC authentication (v1.1)
+- ✅ Link Management (CRUD): Delete, Enable/Disable, Edit expiry (v1.2)
+- ✅ Swagger/OpenAPI documentation (pending regeneration for v1.2)
 - ✅ Database migrations (manual control)
 - ✅ Error handling (structured apperror type)
 
-### In Progress (Next: v1.2 role-based authorization)
-- 🔄 Keycloak realm roles mapping
-- 🔄 Admin endpoint authorization
-- 🔄 Fine-grained access control
+### In Progress
+- 🔄 Swagger regeneration (`make swag` for v1.2 Link Management endpoints)
 
 ### Future (Planned)
 - 📅 Rate limiting per API key
@@ -504,15 +512,15 @@ make migrate-create     # Create new migration
 
 ## Next Steps
 
-1. **Deploy v1.1** (Keycloak OIDC): Staging + production rollout
-2. **Implement v1.2**: Role-based authorization (Keycloak realm roles)
-3. **Implement v1.3**: Link management (delete, update, custom codes)
-4. **Add rate limiting** (v1.5): Per-user quota enforcement
-5. **Observability** (v1.6): Prometheus metrics + Keycloak health checks
+1. **Regenerate Swagger** (v1.2): Run `make swag` to update OpenAPI docs with new Link Management endpoints
+2. **Deploy v1.2** (Link Management CRUD): Staging + production rollout
+3. **Role-based authorization** (v1.3): Keycloak realm roles mapping + admin endpoints
+4. **Add rate limiting** (v1.4): Per-user quota enforcement
+5. **Observability** (v1.5): Prometheus metrics + Keycloak health checks
 
 ---
 
-**Last Updated**: 2026-06-30  
+**Last Updated**: 2026-07-06  
 **Maintainer**: @TranTheTuan  
 **License**: MIT  
 **Auth Model**: Keycloak OIDC resource server (v1.1+)

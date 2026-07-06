@@ -165,13 +165,19 @@
 
 ---
 
-### v1.3 - Link Management Enhancements (Planned)
-**Timeline**: Q3 2026
+### v1.3 - Link Management Enhancements (IN PROGRESS)
+**Timeline**: Q3 2026 | **Completed**: 2026-07-06
 
-- **Delete link** (owner-only or admin)
-- **Update link expiry**
-- **Custom short codes** (alphanumeric, owner-created)
-- **Draft/published states** (private links)
+#### Completed Features
+- ✅ **Delete link** (owner-only, hard delete with cascade on clicks)
+- ✅ **Update link expiry** (PUT with RFC3339 timestamps or null to clear)
+- ✅ **Enable/Disable links** (reversible via `is_active` flag, inactive returns 410 Gone)
+- ✅ **List status filter** (`?status=active|disabled|expired`, all counts updated)
+- ✅ **Frontend link management** (Status badges, row actions for Enable/Disable/Edit expiry/Delete)
+
+#### Deferred (Future)
+- **Custom short codes** (alphanumeric, owner-created) — moved to backlog
+- **Draft/published states** (private links) — moved to backlog
 
 ### v1.4 - Admin Dashboard (Planned)
 **Timeline**: Q3/Q4 2026
@@ -373,6 +379,6 @@
 
 ---
 
-**Last Updated**: 2026-06-30  
+**Last Updated**: 2026-07-06  
 **Next Review**: 2026-07-30 (post v1.2 planning)  
 **Maintained by**: @TranTheTuan

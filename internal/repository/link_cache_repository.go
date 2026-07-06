@@ -18,6 +18,9 @@ const linkCacheKeyPrefix = "link:"
 type LinkCacheRepository interface {
 	Set(ctx context.Context, link *Link, ttl time.Duration) error
 	Get(ctx context.Context, code string) (*Link, error)
+	// Delete evicts a code's cache entry (called after a link mutation so the
+	// redirect path never serves a stale/disabled/deleted target).
+	Delete(ctx context.Context, code string) error
 }
 
 // cachedLink is the JSON payload stored in Redis — only the fields needed at redirect time.
@@ -41,6 +44,11 @@ func (r *linkCacheRepository) Set(ctx context.Context, link *Link, ttl time.Dura
 		return err
 	}
 	return r.rdb.Client.Set(ctx, linkCacheKeyPrefix+link.ShortCode, payload, ttl).Err()
+}
+
+// Delete evicts the cache entry for a short code. A miss is not an error.
+func (r *linkCacheRepository) Delete(ctx context.Context, code string) error {
+	return r.rdb.Client.Del(ctx, linkCacheKeyPrefix+code).Err()
 }
 
 // Get returns a Link with ID and OriginalURL populated, or ErrNotFound on cache miss.

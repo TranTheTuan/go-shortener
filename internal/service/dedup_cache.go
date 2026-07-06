@@ -57,6 +57,14 @@ func (d *DedupCache) Lookup(ctx context.Context, userID int64, url string) (stri
 	return short, true
 }
 
+// Forget drops the owner's dedup entry for a target URL, so re-creating the same
+// URL after its link was deleted is allowed. Best-effort (breaker-guarded).
+func (d *DedupCache) Forget(ctx context.Context, userID int64, url string) {
+	_, _ = d.breaker.Do(func() (any, error) {
+		return nil, d.rdb.Client.Del(ctx, d.key(userID, url)).Err()
+	})
+}
+
 // Remember stores the owner's short URL for a target URL. Best-effort: failures
 // are swallowed (the DB dedup remains the source of truth).
 func (d *DedupCache) Remember(ctx context.Context, userID int64, url, shortURL string, ttl time.Duration) {

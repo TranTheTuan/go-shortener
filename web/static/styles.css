@@ -346,6 +346,47 @@ td button { font-family: var(--display); margin-left: 0.35rem; padding: 0.12rem 
 #links-pager button:disabled { opacity: 0.4; cursor: default; }
 #links-pager button:disabled:hover { border-color: var(--line); transform: none; }
 
+/* ---------- Link status badges + row actions + filter ---------- */
+.badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.64rem; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+.badge-active   { color: #12805c; background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.30); }
+.badge-disabled { color: var(--muted); background: var(--bg); border-color: var(--line); }
+.badge-expired  { color: #c2410c; background: rgba(234, 88, 12, 0.12); border-color: rgba(234, 88, 12, 0.28); }
+[data-theme="dark"] .badge-active  { color: #4ade80; }
+[data-theme="dark"] .badge-expired { color: #fb923c; }
+
+td.actions { white-space: nowrap; }
+button.action {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  padding: 0.14rem 0.45rem;
+  margin: 0 0.25rem 0.2rem 0;
+  border-radius: 7px;
+}
+
+.filter-label {
+  margin: 0; align-self: center;
+  font-family: var(--mono); font-size: 0.7rem;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint);
+}
+select#links-filter {
+  padding: 0.4rem 0.6rem;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--field);
+  color: var(--ink);
+  font: 0.85rem var(--display);
+  cursor: pointer;
+}
+select#links-filter:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
+
 /* ---------- Motion ---------- */
 @keyframes rise {
   from { opacity: 0; transform: translateY(12px); }

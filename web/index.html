@@ -93,10 +93,19 @@
         <!-- My links -->
         <section class="view" data-view="links" hidden>
           <div class="panel">
+            <div class="row toolbar">
+              <label for="links-filter" class="filter-label">Filter</label>
+              <select id="links-filter">
+                <option value="">All</option>
+                <option value="active">Active</option>
+                <option value="disabled">Disabled</option>
+                <option value="expired">Expired</option>
+              </select>
+            </div>
             <p id="links-status" class="muted"></p>
             <table id="links-table" hidden>
               <thead>
-                <tr><th>Short</th><th>Original</th><th>Clicks</th><th>Created</th><th>Expires</th></tr>
+                <tr><th>Short</th><th>Original</th><th>Clicks</th><th>Status</th><th>Expires</th><th>Actions</th></tr>
               </thead>
               <tbody id="links-body"></tbody>
             </table>
