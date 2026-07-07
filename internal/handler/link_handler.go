@@ -171,7 +171,7 @@ func (h *LinkHandler) List(c echo.Context) error {
 // validLinkStatus reports whether s is an accepted list filter ("" = all).
 func validLinkStatus(s string) bool {
 	switch s {
-	case "", "all", repository.LinkStatusActive, repository.LinkStatusDisabled, repository.LinkStatusExpired:
+	case "", repository.LinkStatusActive, repository.LinkStatusDisabled, repository.LinkStatusExpired:
 		return true
 	default:
 		return false

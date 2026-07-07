@@ -27,6 +27,7 @@ type LinkCacheRepository interface {
 type cachedLink struct {
 	ID          int64  `json:"id"`
 	OriginalURL string `json:"url"`
+	IsActive    bool   `json:"is_active"`
 }
 
 type linkCacheRepository struct {
@@ -39,7 +40,7 @@ func NewLinkCacheRepository(rdb *database.RedisClient) LinkCacheRepository {
 }
 
 func (r *linkCacheRepository) Set(ctx context.Context, link *Link, ttl time.Duration) error {
-	payload, err := json.Marshal(cachedLink{ID: link.ID, OriginalURL: link.OriginalURL})
+	payload, err := json.Marshal(cachedLink{ID: link.ID, OriginalURL: link.OriginalURL, IsActive: link.IsActive})
 	if err != nil {
 		return err
 	}
@@ -64,5 +65,5 @@ func (r *linkCacheRepository) Get(ctx context.Context, code string) (*Link, erro
 	if err := json.Unmarshal([]byte(raw), &cl); err != nil {
 		return nil, err
 	}
-	return &Link{ID: cl.ID, ShortCode: code, OriginalURL: cl.OriginalURL}, nil
+	return &Link{ID: cl.ID, ShortCode: code, OriginalURL: cl.OriginalURL, IsActive: cl.IsActive}, nil
 }
