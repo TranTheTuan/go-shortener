@@ -3,12 +3,15 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/TranTheTuan/go-shortener/internal/repository"
 	"github.com/TranTheTuan/go-shortener/pkg/apperror"
+	"github.com/TranTheTuan/go-shortener/pkg/metrics"
 	"github.com/TranTheTuan/go-shortener/pkg/shortcode"
 )
 
@@ -115,13 +118,14 @@ func (s *linkService) Create(ctx context.Context, in CreateLinkInput) (*reposito
 
 	// No existing link to reuse: a new link would be created, so enforce quota.
 	if in.QuotaExhausted {
+		metrics.RecordQuotaRejection(ctx)
 		return nil, false, apperror.TooManyRequests("daily link quota exceeded")
 	}
 
 	for attempt := 0; attempt < maxCodeGenAttempts; attempt++ {
 		code, err := shortcode.Generate(s.codeLen)
 		if err != nil {
-			return nil, false, apperror.Internal(err)
+			return nil, false, apperror.Internal(fmt.Errorf("linkService.Create: %w", err))
 		}
 		link := &repository.Link{
 			ShortCode:   code,
@@ -135,7 +139,7 @@ func (s *linkService) Create(ctx context.Context, in CreateLinkInput) (*reposito
 			continue
 		}
 		if err != nil {
-			return nil, false, apperror.Internal(err)
+			return nil, false, apperror.Internal(fmt.Errorf("linkService.Create: %w", err))
 		}
 		s.cacheSet(ctx, created)
 		return created, false, nil
@@ -148,7 +152,13 @@ func (s *linkService) Create(ctx context.Context, in CreateLinkInput) (*reposito
 // On cache miss it queries the DB, checks expiry, and backfills the cache.
 func (s *linkService) Resolve(ctx context.Context, code string) (*repository.Link, error) {
 	if cached := s.cacheGet(ctx, code); cached != nil {
+		if s.cache != nil {
+			metrics.RecordCacheLookup(ctx, true)
+		}
 		return cached, nil
+	}
+	if s.cache != nil {
+		metrics.RecordCacheLookup(ctx, false)
 	}
 
 	link, err := s.repo.GetByCode(ctx, code)
@@ -156,7 +166,7 @@ func (s *linkService) Resolve(ctx context.Context, code string) (*repository.Lin
 		return nil, apperror.NotFound("short link not found")
 	}
 	if err != nil {
-		return nil, apperror.Internal(err)
+		return nil, apperror.Internal(fmt.Errorf("linkService.Resolve: %w", err))
 	}
 	if link.ExpiresAt != nil && link.ExpiresAt.Before(s.now().UTC()) {
 		return nil, apperror.Gone("short link has expired")
@@ -164,7 +174,8 @@ func (s *linkService) Resolve(ctx context.Context, code string) (*repository.Lin
 	// Disabled links stop redirecting. Checked before caching so an inactive
 	// link is never cached; re-enabling works on the next resolve.
 	if !link.IsActive {
-		return nil, apperror.Gone("short link is disabled")
+		// Distinct code (still 410) so redirect metrics separate disabled from expired.
+		return nil, apperror.New(http.StatusGone, "DISABLED", "short link is disabled")
 	}
 
 	s.cacheSet(ctx, link)
@@ -179,11 +190,11 @@ func (s *linkService) ListByOwner(ctx context.Context, ownerID int64, status str
 
 	items, err := s.repo.ListByOwner(ctx, ownerID, status, now, limit, offset)
 	if err != nil {
-		return nil, 0, apperror.Internal(err)
+		return nil, 0, apperror.Internal(fmt.Errorf("linkService.ListByOwner: %w", err))
 	}
 	total, err := s.repo.CountByOwner(ctx, ownerID, status, now)
 	if err != nil {
-		return nil, 0, apperror.Internal(err)
+		return nil, 0, apperror.Internal(fmt.Errorf("linkService.ListByOwner: %w", err))
 	}
 	return items, total, nil
 }
@@ -196,7 +207,7 @@ func (s *linkService) ownedByCode(ctx context.Context, code string, ownerID int6
 		return nil, apperror.NotFound("short link not found")
 	}
 	if err != nil {
-		return nil, apperror.Internal(err)
+		return nil, apperror.Internal(fmt.Errorf("linkService.ownedByCode: %w", err))
 	}
 	if link.UserID == nil || *link.UserID != ownerID {
 		return nil, apperror.NotFound("short link not found")
@@ -215,7 +226,7 @@ func (s *linkService) Delete(ctx context.Context, code string, ownerID int64) (*
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, apperror.NotFound("short link not found")
 		}
-		return nil, apperror.Internal(err)
+		return nil, apperror.Internal(fmt.Errorf("linkService.Delete: %w", err))
 	}
 	s.cacheDelete(ctx, code)
 	return link, nil
@@ -236,7 +247,7 @@ func (s *linkService) Update(ctx context.Context, code string, ownerID int64, ex
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, apperror.NotFound("short link not found")
 		}
-		return nil, apperror.Internal(err)
+		return nil, apperror.Internal(fmt.Errorf("linkService.Update: %w", err))
 	}
 	s.cacheDelete(ctx, code)
 	link.IsActive = isActive

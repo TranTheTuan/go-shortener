@@ -197,12 +197,20 @@
 - Metrics: current usage, reset time
 - Configurable thresholds
 
-### v1.6 - Observability (Planned)
+### v1.6 - Observability (IN PROGRESS)
 **Timeline**: Q4 2026 / Q1 2027
 
-- Prometheus metrics (request count, latency, cache hit ratio)
-- Tracing integration (OpenTelemetry)
-- Request-scoped logging improvements
+#### Completed (Metrics) ✅
+- ✅ **Prometheus metrics** (OTel SDK + Prometheus exporter on :9464)
+- ✅ **RED metrics** (request count, duration, error rate via HTTP middleware)
+- ✅ **Domain metrics** (redirects, cache hits/misses, quota rejections, Kafka events, Redis breaker state)
+- ✅ **Grafana dashboard** (RED + domain + runtime panels)
+- ✅ **ServiceMonitor** (kube-prometheus-stack integration via `release: proxy-monitor`)
+
+#### Still Planned (Future)
+- Tracing integration (OpenTelemetry/Tempo)
+- OTel Collector push (when volumes warrant)
+- Request-scoped logging improvements (structured error logs already shipped)
 - Health check details (database, cache status, Keycloak status)
 - Alerting rules (example: cache down)
 
@@ -379,6 +387,6 @@
 
 ---
 
-**Last Updated**: 2026-07-06  
+**Last Updated**: 2026-07-07 (v1.6 Metrics complete)  
 **Next Review**: 2026-07-30 (post v1.2 planning)  
 **Maintained by**: @TranTheTuan

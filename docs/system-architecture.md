@@ -540,13 +540,28 @@ Clients → Load Balancer → [Echo 1, Echo 2, ...]
 - **Profiles**: CPU, heap, goroutine, block contention
 - **Disable**: Set `SERVER_PPROF_ADDR=""` in production
 
-### Metrics (Not Built-in)
-Future enhancements:
-- Prometheus metrics (request count, latency histograms)
-- Request rate per user
-- Cache hit ratio
-- Database query latency
-- Keycloak token validation latency
+### Metrics (OTel Prometheus)
+
+**Endpoint**: `http://0.0.0.0:9464/metrics` (configurable via `SERVER_METRICS_ADDR`, empty disables)  
+**Exporter**: OpenTelemetry Prometheus (in-cluster only, never on public ingress)  
+**Scrape Path**: Kubernetes ServiceMonitor with label `release: proxy-monitor`
+
+**HTTP RED Middleware** (per request):
+- `http_server_request_duration_seconds` — Histogram: request latency, labels: method, route (template), status
+- `http_server_active_requests` — Gauge: concurrent requests, labels: method, route
+
+**Domain Counters** (business metrics):
+| Metric | Labels | Purpose |
+|--------|--------|---------|
+| `redirects_total` | result=ok\|notfound\|expired\|disabled | Redirect outcomes |
+| `link_cache_lookups_total` | result=hit\|miss | Cache performance |
+| `quota_rejections_total` | (none) | Quota limit hits |
+| `click_events_total` | result=produced\|dropped | Analytics events |
+| `redis_breaker_open` | (gauge) | Circuit breaker state |
+
+**Cardinality Rule**: Route label uses template only (e.g., `/api/links/:code`, never user_id/short_code/URL) to prevent metric explosion.
+
+**Go Runtime Metrics**: Included automatically (memory, goroutines, GC).
 
 ---
 

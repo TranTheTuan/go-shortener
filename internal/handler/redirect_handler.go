@@ -8,6 +8,8 @@ import (
 
 	"github.com/TranTheTuan/go-shortener/internal/events"
 	"github.com/TranTheTuan/go-shortener/internal/service"
+	"github.com/TranTheTuan/go-shortener/pkg/apperror"
+	"github.com/TranTheTuan/go-shortener/pkg/metrics"
 	"github.com/TranTheTuan/go-shortener/pkg/response"
 )
 
@@ -36,7 +38,9 @@ func NewRedirectHandler(links service.LinkService, clicks events.ClickProducer) 
 // @Failure      410   {object}  response.Envelope  "short link has expired"
 // @Router       /{code} [get]
 func (h *RedirectHandler) Redirect(c echo.Context) error {
-	link, err := h.links.Resolve(c.Request().Context(), c.Param("code"))
+	ctx := c.Request().Context()
+	link, err := h.links.Resolve(ctx, c.Param("code"))
+	metrics.RecordRedirect(ctx, redirectResult(err))
 	if err != nil {
 		return response.Error(c, err) // 404 / 410 / 500
 	}
@@ -50,4 +54,22 @@ func (h *RedirectHandler) Redirect(c echo.Context) error {
 	})
 
 	return c.Redirect(http.StatusFound, link.OriginalURL)
+}
+
+// redirectResult classifies a Resolve outcome into a bounded metric label.
+func redirectResult(err error) string {
+	if err == nil {
+		return "ok"
+	}
+	if ae, ok := apperror.As(err); ok {
+		switch ae.Code {
+		case "NOT_FOUND":
+			return "notfound"
+		case "DISABLED":
+			return "disabled"
+		case "GONE":
+			return "expired"
+		}
+	}
+	return "error"
 }

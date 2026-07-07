@@ -19,6 +19,7 @@ import (
 	"github.com/TranTheTuan/go-shortener/internal/service"
 	"github.com/TranTheTuan/go-shortener/pkg/database"
 	"github.com/TranTheTuan/go-shortener/pkg/keycloak"
+	"github.com/TranTheTuan/go-shortener/pkg/metrics"
 	"github.com/TranTheTuan/go-shortener/pkg/redisbreaker"
 	"github.com/TranTheTuan/go-shortener/pkg/storage"
 )
@@ -85,6 +86,31 @@ func runServer() error {
 	dedupCache := service.NewDedupCache(rdb, breaker, cfg.Shortener.CacheTTL)
 	subRepo := repository.NewSubscriptionRepository(db)
 	quotaSvc := service.NewQuotaService(rdb, breaker, planRepo, subRepo, cfg.Quota.DefaultPlanCode, cfg.Quota.BasicFallbackLimit)
+
+	// Metrics: OTel MeterProvider + Prometheus exporter, served on a dedicated
+	// in-cluster port (scraped by Prometheus; never routed via ingress).
+	var metricsSrv *http.Server
+	var metricsShutdown func(context.Context) error
+	if cfg.Server.MetricsAddr != "" {
+		reg, shutdown, err := metrics.Setup(breaker.IsOpen)
+		if err != nil {
+			return fmt.Errorf("metrics setup: %w", err)
+		}
+		metricsShutdown = shutdown
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", metrics.Handler(reg))
+		metricsSrv = &http.Server{
+			Addr:              cfg.Server.MetricsAddr,
+			Handler:           mux,
+			ReadHeaderTimeout: 5 * time.Second,
+		}
+		go func() {
+			slog.Info("metrics server starting", "addr", cfg.Server.MetricsAddr)
+			if err := metricsSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				slog.Error("metrics server failed", "error", err)
+			}
+		}()
+	}
 
 	// Bulk upload — optional; only wired when R2 credentials are present.
 	var bulkHandler *handler.BulkJobHandler
@@ -159,6 +185,14 @@ func runServer() error {
 
 	if err := e.Shutdown(shutdownCtx); err != nil {
 		return err
+	}
+	// Stop serving /metrics BEFORE tearing down the provider, so a late scrape
+	// never hits a shut-down MeterProvider.
+	if metricsSrv != nil {
+		_ = metricsSrv.Shutdown(shutdownCtx)
+	}
+	if metricsShutdown != nil {
+		_ = metricsShutdown(shutdownCtx)
 	}
 
 	slog.Info("server stopped gracefully")

@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -74,14 +75,14 @@ func (s *userService) SyncFromKeycloak(ctx context.Context, in SyncInput) (*repo
 		return user, nil
 	}
 	if !errors.Is(err, repository.ErrNotFound) {
-		return nil, apperror.Internal(err)
+		return nil, apperror.Internal(fmt.Errorf("userService.SyncFromKeycloak: %w", err))
 	}
 
 	// New user: resolve the default plan and provision the user together with an
 	// active subscription in one transaction.
 	plan, err := s.plans.GetByCode(ctx, s.defaultPlanCode)
 	if err != nil {
-		return nil, apperror.Internal(err) // default plan is seeded; absence is a misconfiguration
+		return nil, apperror.Internal(fmt.Errorf("userService.SyncFromKeycloak: %w", err)) // default plan is seeded; absence is a misconfiguration
 	}
 
 	now := s.now().UTC()
@@ -110,7 +111,7 @@ func (s *userService) SyncFromKeycloak(ctx context.Context, in SyncInput) (*repo
 		return winner, nil
 	}
 	if err != nil {
-		return nil, apperror.Internal(err)
+		return nil, apperror.Internal(fmt.Errorf("userService.SyncFromKeycloak: %w", err))
 	}
 	return created, nil
 }
@@ -122,7 +123,7 @@ func (s *userService) GetUser(ctx context.Context, id int64) (*repository.User, 
 		return nil, apperror.NotFound("user not found")
 	}
 	if err != nil {
-		return nil, apperror.Internal(err)
+		return nil, apperror.Internal(fmt.Errorf("userService.GetUser: %w", err))
 	}
 	return user, nil
 }
@@ -131,7 +132,7 @@ func (s *userService) GetUser(ctx context.Context, id int64) (*repository.User, 
 func (s *userService) ListUsers(ctx context.Context) ([]*repository.User, error) {
 	users, err := s.repo.List(ctx)
 	if err != nil {
-		return nil, apperror.Internal(err)
+		return nil, apperror.Internal(fmt.Errorf("userService.ListUsers: %w", err))
 	}
 	return users, nil
 }

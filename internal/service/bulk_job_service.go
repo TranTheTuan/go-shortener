@@ -59,7 +59,7 @@ func (s *bulkJobService) GetUploadURL(ctx context.Context, ownerID int64, filena
 	fileKey := fmt.Sprintf("bulk/%d/%s%s", ownerID, randomHex(16), ext)
 	presignedURL, err := s.storage.PresignedPutURL(ctx, fileKey, contentMD5, presignPutTTL)
 	if err != nil {
-		return "", "", apperror.Internal(err)
+		return "", "", apperror.Internal(fmt.Errorf("bulkJobService.GetUploadURL: %w", err))
 	}
 	return presignedURL, fileKey, nil
 }
@@ -81,7 +81,7 @@ func (s *bulkJobService) GetJob(ctx context.Context, id, ownerID int64) (*reposi
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, "", apperror.NotFound("job not found")
 		}
-		return nil, "", apperror.Internal(err)
+		return nil, "", apperror.Internal(fmt.Errorf("bulkJobService.GetJob: %w", err))
 	}
 	if job.OwnerID != ownerID {
 		return nil, "", apperror.NotFound("job not found")
@@ -91,7 +91,7 @@ func (s *bulkJobService) GetJob(ctx context.Context, id, ownerID int64) (*reposi
 	if job.Status == repository.BulkJobStatusCompleted && job.ResultKey != "" {
 		resultURL, err = s.storage.PresignedGetURL(ctx, job.ResultKey, resultGetTTL)
 		if err != nil {
-			return nil, "", apperror.Internal(err)
+			return nil, "", apperror.Internal(fmt.Errorf("bulkJobService.GetJob: %w", err))
 		}
 	}
 	return job, resultURL, nil
@@ -107,11 +107,11 @@ func (s *bulkJobService) DownloadTemplate(format string) ([]byte, string, string
 		f := excelize.NewFile()
 		defer f.Close()
 		if err := f.SetSheetRow("Sheet1", "A1", &[]interface{}{"url", "result"}); err != nil {
-			return nil, "", "", apperror.Internal(err)
+			return nil, "", "", apperror.Internal(fmt.Errorf("bulkJobService.DownloadTemplate: %w", err))
 		}
 		buf, err := f.WriteToBuffer()
 		if err != nil {
-			return nil, "", "", apperror.Internal(err)
+			return nil, "", "", apperror.Internal(fmt.Errorf("bulkJobService.DownloadTemplate: %w", err))
 		}
 		ct := "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 		return buf.Bytes(), ct, "template.xlsx", nil

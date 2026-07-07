@@ -106,6 +106,9 @@ type ServerConfig struct {
 	ShutdownTimeout time.Duration `env:"SHUTDOWN_TIMEOUT" envDefault:"10s"`
 	// PprofAddr is the address for the pprof debug server. Empty string disables it.
 	PprofAddr string `env:"PPROF_ADDR" envDefault:"localhost:6060"`
+	// MetricsAddr serves the Prometheus /metrics endpoint. Empty disables it.
+	// Bind 0.0.0.0 (Prometheus scrapes the pod IP) — do NOT route via ingress.
+	MetricsAddr string `env:"METRICS_ADDR" envDefault:"0.0.0.0:9464"`
 }
 
 // Addr returns the address the HTTP server should listen on.
