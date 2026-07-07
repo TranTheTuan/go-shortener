@@ -33,6 +33,12 @@ func (b *Breaker) Do(fn func() (any, error)) (any, error) {
 	return b.cb.Execute(fn)
 }
 
+// IsOpen reports whether the breaker is currently tripped (rejecting calls).
+// Used by the metrics gauge; safe for concurrent reads.
+func (b *Breaker) IsOpen() bool {
+	return b.cb.State() == gobreaker.StateOpen
+}
+
 // IsUnavailable reports whether err means Redis is effectively unavailable —
 // the breaker is rejecting calls (gobreaker.ErrOpenState/ErrTooManyRequests) or
 // the underlying op failed. Any non-nil error qualifies, so callers fail open.

@@ -23,6 +23,24 @@ All notable changes to the go-shortener project are documented here.
 
 ---
 
+## [Unreleased - Observability] — 2026-07-07
+
+### Added
+- **OpenTelemetry Metrics (Prometheus)** — Observable production-ready monitoring
+  - `/metrics` endpoint on `0.0.0.0:9464` (configurable via `SERVER_METRICS_ADDR`, in-cluster only)
+  - HTTP RED middleware: `http_server_request_duration_seconds` (histogram), `http_server_active_requests` (gauge), labeled by method/route-template/status
+  - Domain counters: `redirects_total`, `link_cache_lookups_total`, `quota_rejections_total`, `click_events_total`; observable: `redis_breaker_open`
+  - Cardinality rule: route labels use template only (e.g., `/api/links/:code`), never user_id/short_code/URL
+  - Kubernetes ServiceMonitor integration (label `release: proxy-monitor`)
+  - Grafana dashboard JSON (`../go-shortener-infra/monitoring/grafana-dashboard-go-shortener.json`)
+  - Go runtime metrics included
+
+### Notes
+- Workers not yet instrumented; server-side metrics only
+- Must keep `/metrics` off public ingress (in-cluster only)
+
+---
+
 ## [v1.1] — 2026-07-06 (Master branch)
 
 ### Added

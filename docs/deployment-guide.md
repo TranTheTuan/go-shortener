@@ -502,6 +502,59 @@ go tool pprof http://localhost:6060/debug/pprof/heap
 curl http://localhost:6060/debug/pprof/goroutine?debug=1 > goroutines.txt
 ```
 
+#### Observability (Metrics & Monitoring)
+
+**Enable Metrics**:
+```bash
+# Environment variable
+SERVER_METRICS_ADDR=0.0.0.0:9464   # Expose /metrics; empty disables
+
+# Or in Helm values (if using go-shortener-infra)
+metrics:
+  enabled: true
+  port: 9464
+```
+
+**Prometheus Scrape Configuration**:
+Metrics are scraped by kube-prometheus-stack via ServiceMonitor in `../go-shortener-infra/`. Ensure label `release: proxy-monitor` matches the ServiceMonitor selector in your Prometheus configuration.
+
+**Security**: `/metrics` endpoint is exposed on `0.0.0.0:9464` and is **in-cluster only**. Never expose this port on public ingress; add network policies to restrict access.
+
+**Grafana Dashboard Import**:
+1. Open Grafana (`http://grafana:3000`)
+2. **Dashboard** → **New** → **Import**
+3. Upload JSON: `../go-shortener-infra/monitoring/grafana-dashboard-go-shortener.json`
+4. Select Prometheus data source
+5. Click **Import**
+
+**PromQL Cheat Sheet**:
+```promql
+# Request rate (requests/sec, by status)
+rate(http_server_request_duration_seconds_count[5m])
+
+# Error rate (5xx responses)
+rate(http_server_request_duration_seconds_count{status=~"5.."}[5m])
+
+# P95 latency (95th percentile request duration)
+histogram_quantile(0.95, rate(http_server_request_duration_seconds_bucket[5m]))
+
+# Cache hit ratio (percentage)
+100 * rate(link_cache_lookups_total{result="hit"}[5m]) / rate(link_cache_lookups_total[5m])
+
+# Redirect success rate
+100 * rate(redirects_total{result="ok"}[5m]) / rate(redirects_total[5m])
+
+# Active requests (current count)
+http_server_active_requests
+```
+
+**Metrics Inventory**:
+- HTTP RED: `http_server_request_duration_seconds`, `http_server_active_requests`
+- Domain: `redirects_total`, `link_cache_lookups_total`, `quota_rejections_total`, `click_events_total`, `redis_breaker_open`
+- Go runtime: memory, goroutines, GC
+
+See `docs/system-architecture.md` → **Observability** for full details.
+
 ---
 
 ## Scaling Strategies

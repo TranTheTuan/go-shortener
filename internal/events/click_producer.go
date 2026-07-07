@@ -13,6 +13,7 @@ import (
 
 	"github.com/TranTheTuan/go-shortener/configs"
 	"github.com/TranTheTuan/go-shortener/internal/repository"
+	"github.com/TranTheTuan/go-shortener/pkg/metrics"
 )
 
 // ClickEvent is the payload published to Kafka for every redirect.
@@ -91,6 +92,7 @@ func NewKafkaProducer(cfg configs.KafkaConfig) (ClickProducer, error) {
 func (p *kafkaProducer) Publish(ev ClickEvent) {
 	payload, err := json.Marshal(ev)
 	if err != nil {
+		metrics.RecordClickEvent(context.Background(), "dropped")
 		slog.Warn("click event marshal failed", "error", err)
 		return
 	}
@@ -98,8 +100,11 @@ func (p *kafkaProducer) Publish(ev ClickEvent) {
 	p.produce(context.Background(), &kgo.Record{Topic: p.topic, Key: key, Value: payload},
 		func(_ *kgo.Record, err error) {
 			if err != nil {
+				metrics.RecordClickEvent(context.Background(), "dropped")
 				slog.Warn("click produce failed (dropped)", "link_id", ev.LinkID, "error", err)
+				return
 			}
+			metrics.RecordClickEvent(context.Background(), "produced")
 		})
 }
 

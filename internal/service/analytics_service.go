@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/TranTheTuan/go-shortener/internal/repository"
@@ -71,17 +72,17 @@ func (s *analyticsService) Stats(ctx context.Context, code string) (*LinkStats, 
 		return nil, apperror.NotFound("short link not found")
 	}
 	if err != nil {
-		return nil, apperror.Internal(err)
+		return nil, apperror.Internal(fmt.Errorf("analyticsService.Stats: %w", err))
 	}
 
 	total, err := s.clicks.CountByLinkID(ctx, link.ID)
 	if err != nil {
-		return nil, apperror.Internal(err)
+		return nil, apperror.Internal(fmt.Errorf("analyticsService.Stats: %w", err))
 	}
 
 	recent, err := s.clicks.ListByLinkID(ctx, link.ID, recentClicksLimit)
 	if err != nil {
-		return nil, apperror.Internal(err)
+		return nil, apperror.Internal(fmt.Errorf("analyticsService.Stats: %w", err))
 	}
 
 	return &LinkStats{
