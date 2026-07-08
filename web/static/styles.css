@@ -239,6 +239,16 @@ body {
 
 .content { padding: 2.5rem; overflow: auto; }
 .view { max-width: 700px; }
+/* Data tables need room — the links/bulk views span the full content width. */
+.view[data-view="links"], .view[data-view="bulk"] { max-width: 1200px; }
+/* Column widths for the links table (table-layout is fixed). Original gets the
+   lion's share so long URLs are readable; the rest are compact. */
+#links-table th:nth-child(1) { width: 20%; }
+#links-table th:nth-child(2) { width: 36%; }
+#links-table th:nth-child(3) { width: 7%; }
+#links-table th:nth-child(4) { width: 11%; }
+#links-table th:nth-child(5) { width: 12%; }
+#links-table th:nth-child(6) { width: 14%; }
 .view > .panel { animation: rise 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: 0.06s; }
 
 .panel {

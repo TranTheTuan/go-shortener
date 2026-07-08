@@ -33,29 +33,29 @@ func Success(c echo.Context, status int, data any) error {
 // single choke point every handler funnels errors through. Services attach
 // operation context by wrapping (fmt.Errorf("svc.Method: %w", err)); the wrapped
 // cause travels inside the apperror and surfaces in this one line, so there is
-// no need to log inside each method. 5xx log at ERROR (with the cause), 4xx at
-// DEBUG (client errors — opt-in visibility). Each line carries request_id +
-// route so it correlates with the request's other logs in Loki.
+// no need to log inside each method. Every error — 4xx and 5xx — logs at ERROR
+// so nothing is silently dropped at the default Info level. Each line carries
+// request_id + route so it correlates with the request's other logs in Loki.
 func Error(c echo.Context, err error) error {
 	appErr, ok := apperror.As(err)
 	if !ok {
 		appErr = apperror.Internal(err) // unknown error → generic 500, cause kept for the log
 	}
 
-	attrs := []any{
+	// 5xx = server fault; 4xx = client error. Both logged at ERROR (differ only
+	// by message) so 4xx aren't invisible under the Info-level handler.
+	msg := "request rejected"
+	if appErr.Status >= http.StatusInternalServerError {
+		msg = "request failed"
+	}
+	slog.ErrorContext(c.Request().Context(), msg,
 		"code", appErr.Code,
 		"status", appErr.Status,
 		"method", c.Request().Method,
 		"route", c.Path(), // route template (e.g. /api/links/:code) — low cardinality
 		"request_id", c.Response().Header().Get(echo.HeaderXRequestID),
 		"error", appErr, // renders the full wrapped chain: code: message: cause
-	}
-	ctx := c.Request().Context()
-	if appErr.Status >= http.StatusInternalServerError {
-		slog.ErrorContext(ctx, "request failed", attrs...)
-	} else {
-		slog.DebugContext(ctx, "request rejected", attrs...)
-	}
+	)
 
 	return c.JSON(appErr.Status, Envelope{Error: &ErrorBody{
 		Code:    appErr.Code,
