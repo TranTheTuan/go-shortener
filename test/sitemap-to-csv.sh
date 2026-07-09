@@ -43,13 +43,15 @@ tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
 crawl() {
   local xml; xml="$(fetch "$1")"
   [ -n "$xml" ] || return 0
-  if printf '%s' "$xml" | grep -q '<sitemapindex'; then
-    printf '%s' "$xml" | locs | while read -r child; do crawl "$child"; done
-  elif printf '%s' "$xml" | grep -q '<urlset'; then
-    printf '%s' "$xml" | locs >> "$tmp"
+  # here-strings, not `printf | grep -q`: grep -q exits on first match and the
+  # SIGPIPE'd printf would fail the pipeline under pipefail, misrouting big files.
+  if grep -q '<sitemapindex' <<<"$xml"; then
+    locs <<<"$xml" | while read -r child; do crawl "$child"; done
+  elif grep -q '<urlset' <<<"$xml"; then
+    locs <<<"$xml" >> "$tmp"
   else
     # plain-text sitemap (e.g. sitemap.txt): one URL per line.
-    printf '%s' "$xml" | txt_locs >> "$tmp"
+    txt_locs <<<"$xml" >> "$tmp"
   fi
 }
 
@@ -68,6 +70,9 @@ fi
 [ "${#sitemaps[@]}" -gt 0 ] || { echo "no sitemap found for $domain" >&2; exit 2; }
 
 for s in "${sitemaps[@]}"; do crawl "$s"; done
+
+# drop non-article URLs: images, media, docs, feeds (keep only page/article links).
+grep -ivE '\.(jpe?g|png|gif|webp|svg|bmp|ico|avif|tiff?|mp4|webm|mov|avi|mp3|wav|ogg|pdf|zip|gz|rss|xml|css|js)([?#].*)?$' "$tmp" > "$tmp.f" && mv "$tmp.f" "$tmp"
 
 # 2. dedupe, then split into ${prefix}-N.csv chunks of 10k urls each (header per file).
 count="$(sort -u "$tmp" | awk -v p="$prefix" '

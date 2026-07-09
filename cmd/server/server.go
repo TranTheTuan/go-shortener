@@ -60,7 +60,12 @@ func runServer() error {
 
 	linkRepo := repository.NewLinkRepository(db)
 	clickRepo := repository.NewClickRepository(db)
-	linkCacheRepo := repository.NewLinkCacheRepository(rdb)
+	// Tiered redirect cache: per-pod in-memory L1 fronting Redis (L2). L1 spares
+	// Redis the round trip for hot codes; its short TTL bounds cross-pod staleness.
+	linkCacheRepo := repository.NewTieredLinkCache(
+		repository.NewLinkCacheRepository(rdb),
+		cfg.Shortener.L1CacheSize, cfg.Shortener.L1CacheTTL,
+	)
 	linkSvc := service.NewLinkService(linkRepo, linkCacheRepo, cfg.Shortener.CodeLength, cfg.Shortener.CacheTTL)
 	analyticsSvc := service.NewAnalyticsService(linkRepo, clickRepo)
 

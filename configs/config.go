@@ -94,6 +94,14 @@ type ShortenerConfig struct {
 	CodeLength int `env:"CODE_LENGTH" envDefault:"7"`
 	// CacheTTL is the default Redis TTL for links without an expiry date.
 	CacheTTL time.Duration `env:"CACHE_TTL" envDefault:"24h"`
+	// L1CacheSize caps entries in the per-pod in-memory (L1) redirect cache that
+	// fronts Redis. 0 disables L1 (Redis-only).
+	L1CacheSize int `env:"L1_CACHE_SIZE" envDefault:"50000"`
+	// L1CacheTTL bounds L1 staleness. L1 can't be invalidated across pods, so a
+	// mutated link (disabled/deleted/re-expired) keeps resolving from a stale L1
+	// entry — on pods other than the one that handled the mutation — for at most
+	// this long. Keep it short; Redis (L2) stays authoritative (evicted at once).
+	L1CacheTTL time.Duration `env:"L1_CACHE_TTL" envDefault:"10s"`
 }
 
 // ServerConfig holds the HTTP server settings.
