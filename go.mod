@@ -8,6 +8,7 @@ require (
 	github.com/coreos/go-oidc/v3 v3.19.0
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/goccy/go-json v0.10.6
+	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/labstack/echo/v4 v4.15.4
 	github.com/minio/minio-go/v7 v7.2.1
 	github.com/prometheus/client_golang v1.23.2
