@@ -45,9 +45,11 @@ type ClickProducer interface {
 	Close()
 }
 
-// buildKGOOpts assembles TLS+SASL options from config. Returns nil for plaintext.
+// buildKGOOpts assembles tracing + TLS + SASL options from config, shared by
+// every Kafka client (producers and consumers) so trace context flows across
+// the broker uniformly.
 func buildKGOOpts(cfg configs.KafkaConfig) []kgo.Opt {
-	var opts []kgo.Opt
+	opts := []kgo.Opt{kgo.WithHooks(tracingHooks()...)}
 	if cfg.TLSEnabled {
 		opts = append(opts, kgo.DialTLSConfig(new(tls.Config)))
 	}

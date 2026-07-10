@@ -23,6 +23,22 @@ type Config struct {
 	Quota     QuotaConfig     `envPrefix:"QUOTA_"`
 	Kafka     KafkaConfig     `envPrefix:"KAFKA_"`
 	R2        R2Config        `envPrefix:"R2_"`
+	Tracing   TracingConfig   `envPrefix:"TRACING_"`
+	// ServiceVersion tags traces/metrics with the running build (git sha),
+	// injected at deploy. Defaults to "dev" for local runs.
+	ServiceVersion string `env:"SERVICE_VERSION" envDefault:"dev"`
+}
+
+// TracingConfig holds OpenTelemetry trace-export settings. Disabled by default
+// so the app runs without a collector; enable in-cluster where Alloy/Tempo run.
+type TracingConfig struct {
+	// Enabled turns OTLP trace export on. Off = no TracerProvider installed.
+	Enabled bool `env:"ENABLED" envDefault:"true"`
+	// OTLPEndpoint is the OTLP gRPC target (the Alloy forwarder), host:port.
+	OTLPEndpoint string `env:"OTLP_ENDPOINT" envDefault:"alloy.monitoring.svc.cluster.local:4317"`
+	// SampleRatio is the head-sampling ratio: 1.0 keeps every trace; lower it
+	// only under load testing. Decision is made once at the root and propagated.
+	SampleRatio float64 `env:"SAMPLE_RATIO" envDefault:"1.0"`
 }
 
 // R2Config holds Cloudflare R2 (S3-compatible) settings.

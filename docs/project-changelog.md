@@ -23,7 +23,7 @@ All notable changes to the go-shortener project are documented here.
 
 ---
 
-## [Unreleased - Observability] — 2026-07-07
+## [Unreleased - Observability] — 2026-07-10
 
 ### Added
 - **OpenTelemetry Metrics (Prometheus)** — Observable production-ready monitoring
@@ -35,9 +35,21 @@ All notable changes to the go-shortener project are documented here.
   - Grafana dashboard JSON (`../go-shortener-infra/monitoring/grafana-dashboard-go-shortener.json`)
   - Go runtime metrics included
 
+- **Distributed Tracing (OpenTelemetry → Grafana Tempo)** — Third observability pillar
+  - OTLP gRPC export → Alloy DaemonSet (forward-only) → Tempo (filesystem, 72h retention)
+  - Head-based sampling (ParentBased + TraceIDRatioBased, default 100% keep); decision propagated via W3C `tracecontext`
+  - Auto-instrumentation: `otelecho` (HTTP), `redisotel` (Redis), `otelgorm` (GORM), `kotel` (Kafka)
+  - **L1-cache protection**: `GET /:code` excluded from tracing to preserve hot-path performance
+  - Async trace continuity: bulk-job producer→Kafka→consumer→PG renders as single trace via baggage propagation
+  - Correlation: `slog_trace_handler` stamps `trace_id`/`span_id` on logs → Loki derived field jumps to Tempo; Tempo `tracesToLogsV2` returns to logs
+  - Config: `TRACING_ENABLED` (opt-in, default false), `TRACING_OTLP_ENDPOINT`, `TRACING_SAMPLE_RATIO`, `SERVICE_VERSION`
+  - New pkg: `pkg/observability/` (tracing.go, slog_trace_handler.go)
+  - Infrastructure: Alloy manifests + Tempo config in `../hdp-infra/monitoring/` and `../go-shortener-infra/`
+
 ### Notes
-- Workers not yet instrumented; server-side metrics only
-- Must keep `/metrics` off public ingress (in-cluster only)
+- Workers not yet instrumented; server-side only
+- Tempo metrics-generator (service graph) deferred to phase 2
+- Tracing fully opt-in; no-op when `TRACING_ENABLED=false`
 
 ---
 

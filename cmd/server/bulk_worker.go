@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/TranTheTuan/go-shortener/configs"
 	"github.com/TranTheTuan/go-shortener/internal/events"
@@ -28,6 +29,16 @@ func runBulkWorker() error {
 	if !cfg.R2.Enabled() {
 		return errors.New("bulk-worker requires R2_ACCOUNT_ID and R2_ACCESS_KEY_ID to be set")
 	}
+
+	tpShutdown, err := setupTracing(context.Background(), cfg, "go-shortener-bulk-worker")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = tpShutdown(ctx) // bounded so an unreachable Alloy can't stall drain
+	}()
 
 	db, err := openPostgres(cfg)
 	if err != nil {
