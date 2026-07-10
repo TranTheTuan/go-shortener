@@ -314,9 +314,9 @@ func TestLinkService_Resolve_CacheMissBackfillsCache(t *testing.T) {
 func TestLinkService_ListByOwner_ClampsAndReturnsTotal(t *testing.T) {
 	var gotLimit, gotOffset int
 	repo := &mockLinkRepo{
-		listByOwnerFn: func(_ context.Context, _ int64, _ string, _ time.Time, limit, offset int) ([]*repository.OwnedLink, error) {
+		listByOwnerFn: func(_ context.Context, _ int64, _ string, _ time.Time, limit, offset int) ([]*repository.Link, error) {
 			gotLimit, gotOffset = limit, offset
-			return []*repository.OwnedLink{{Link: repository.Link{ID: 1, ShortCode: "abc1234"}, TotalClicks: 3}}, nil
+			return []*repository.Link{{ID: 1, ShortCode: "abc1234", ClicksCount: 3}}, nil
 		},
 		countByOwnerFn: func(_ context.Context, _ int64, _ string, _ time.Time) (int64, error) { return 42, nil },
 	}
@@ -338,7 +338,7 @@ func TestLinkService_ListByOwner_ClampsAndReturnsTotal(t *testing.T) {
 		if total != 42 {
 			t.Errorf("total = %d, want 42", total)
 		}
-		if len(items) != 1 || items[0].TotalClicks != 3 {
+		if len(items) != 1 || items[0].ClicksCount != 3 {
 			t.Errorf("items = %+v", items)
 		}
 	}
@@ -346,7 +346,7 @@ func TestLinkService_ListByOwner_ClampsAndReturnsTotal(t *testing.T) {
 
 func TestLinkService_ListByOwner_RepoError(t *testing.T) {
 	repo := &mockLinkRepo{
-		listByOwnerFn: func(_ context.Context, _ int64, _ string, _ time.Time, _, _ int) ([]*repository.OwnedLink, error) {
+		listByOwnerFn: func(_ context.Context, _ int64, _ string, _ time.Time, _, _ int) ([]*repository.Link, error) {
 			return nil, errors.New("db down")
 		},
 	}
@@ -525,9 +525,9 @@ func TestLinkService_Update_NonOwner(t *testing.T) {
 func TestLinkService_ListByOwner_StatusFilter(t *testing.T) {
 	var gotStatus string
 	repo := &mockLinkRepo{
-		listByOwnerFn: func(_ context.Context, _ int64, status string, _ time.Time, _, _ int) ([]*repository.OwnedLink, error) {
+		listByOwnerFn: func(_ context.Context, _ int64, status string, _ time.Time, _, _ int) ([]*repository.Link, error) {
 			gotStatus = status
-			return []*repository.OwnedLink{{Link: repository.Link{ID: 1, ShortCode: "abc1234"}, TotalClicks: 3}}, nil
+			return []*repository.Link{{ID: 1, ShortCode: "abc1234", ClicksCount: 3}}, nil
 		},
 		countByOwnerFn: func(_ context.Context, _ int64, status string, _ time.Time) (int64, error) {
 			if status != gotStatus {

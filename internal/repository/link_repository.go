@@ -17,13 +17,8 @@ type Link struct {
 	UserID      *int64     `gorm:"index" json:"user_id,omitempty"` // nil = created via API key (unowned)
 	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
 	IsActive    bool       `gorm:"not null;default:true" json:"is_active"`
+	ClicksCount int64      `gorm:"not null;default:0" json:"clicks_count"`
 	CreatedAt   time.Time  `json:"created_at"`
-}
-
-// OwnedLink is a link plus its click count, used by the owner's list view.
-type OwnedLink struct {
-	Link
-	TotalClicks int64 `json:"total_clicks"`
 }
 
 // Link status filters for the owner's list (mutually exclusive; "" = all).
@@ -43,7 +38,7 @@ type LinkRepository interface {
 	// ListByOwner returns the owner's links (newest first) with their click
 	// counts, paginated by limit/offset. status filters the set (see the
 	// LinkStatus* constants; "" = all); now anchors the expiry comparison.
-	ListByOwner(ctx context.Context, ownerID int64, status string, now time.Time, limit, offset int) ([]*OwnedLink, error)
+	ListByOwner(ctx context.Context, ownerID int64, status string, now time.Time, limit, offset int) ([]*Link, error)
 	// CountByOwner returns the number of links owned by the user matching the
 	// same status filter as ListByOwner.
 	CountByOwner(ctx context.Context, ownerID int64, status string, now time.Time) (int64, error)
@@ -106,16 +101,14 @@ func (r *linkRepository) GetByCode(ctx context.Context, code string) (*Link, err
 
 // ListByOwner returns the owner's links, newest first, each with its click
 // count (LEFT JOIN so click-less links report 0), paginated by limit/offset.
-func (r *linkRepository) ListByOwner(ctx context.Context, ownerID int64, status string, now time.Time, limit, offset int) ([]*OwnedLink, error) {
-	var out []*OwnedLink
+func (r *linkRepository) ListByOwner(ctx context.Context, ownerID int64, status string, now time.Time, limit, offset int) ([]*Link, error) {
+	var out []*Link
 	q := r.db.WithContext(ctx).
 		Model(&Link{}).
-		Select("links.*, COUNT(clicks.id) AS total_clicks").
-		Joins("LEFT JOIN clicks ON clicks.link_id = links.id").
+		Select("links.*").
 		Where("links.user_id = ?", ownerID)
 	q = applyLinkStatus(q, status, now)
 	err := q.
-		Group("links.id").
 		Order("links.created_at DESC").
 		Limit(limit).Offset(offset).
 		Scan(&out).Error
