@@ -18,7 +18,7 @@ import (
 
 // stubLinkService satisfies service.LinkService; only ListByOwner is exercised.
 type stubLinkService struct {
-	listFn   func(ctx context.Context, ownerID int64, status string, limit, offset int) ([]*repository.OwnedLink, int64, error)
+	listFn   func(ctx context.Context, ownerID int64, status string, limit, offset int) ([]*repository.Link, int64, error)
 	deleteFn func(ctx context.Context, code string, ownerID int64) (*repository.Link, error)
 	updateFn func(ctx context.Context, code string, ownerID int64, expiresAt *time.Time, isActive bool) (*repository.Link, error)
 }
@@ -27,7 +27,7 @@ func (s stubLinkService) Create(context.Context, service.CreateLinkInput) (*repo
 	return nil, false, nil
 }
 func (s stubLinkService) Resolve(context.Context, string) (*repository.Link, error) { return nil, nil }
-func (s stubLinkService) ListByOwner(ctx context.Context, ownerID int64, status string, limit, offset int) ([]*repository.OwnedLink, int64, error) {
+func (s stubLinkService) ListByOwner(ctx context.Context, ownerID int64, status string, limit, offset int) ([]*repository.Link, int64, error) {
 	if s.listFn != nil {
 		return s.listFn(ctx, ownerID, status, limit, offset)
 	}
@@ -49,10 +49,10 @@ func (s stubLinkService) Update(ctx context.Context, code string, ownerID int64,
 func TestLinkHandler_List(t *testing.T) {
 	var gotOwner int64
 	var gotLimit, gotOffset int
-	svc := stubLinkService{listFn: func(_ context.Context, ownerID int64, status string, limit, offset int) ([]*repository.OwnedLink, int64, error) {
+	svc := stubLinkService{listFn: func(_ context.Context, ownerID int64, status string, limit, offset int) ([]*repository.Link, int64, error) {
 		gotOwner, gotLimit, gotOffset = ownerID, limit, offset
-		return []*repository.OwnedLink{
-			{Link: repository.Link{ShortCode: "abc1234", OriginalURL: "https://example.com"}, TotalClicks: 5},
+		return []*repository.Link{
+			{ShortCode: "abc1234", OriginalURL: "https://example.com", ClicksCount: 5},
 		}, 1, nil
 	}}
 	h := NewLinkHandler(svc, nil, nil, "http://sho.rt")
@@ -107,9 +107,9 @@ func TestLinkHandler_List_Unauthenticated(t *testing.T) {
 
 func TestLinkHandler_List_StatusFilter(t *testing.T) {
 	var gotStatus string
-	svc := stubLinkService{listFn: func(_ context.Context, _ int64, status string, _, _ int) ([]*repository.OwnedLink, int64, error) {
+	svc := stubLinkService{listFn: func(_ context.Context, _ int64, status string, _, _ int) ([]*repository.Link, int64, error) {
 		gotStatus = status
-		return []*repository.OwnedLink{}, 0, nil
+		return []*repository.Link{}, 0, nil
 	}}
 	h := NewLinkHandler(svc, nil, nil, "http://sho.rt")
 

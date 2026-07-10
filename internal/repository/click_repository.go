@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"gorm.io/gorm"
@@ -46,7 +47,45 @@ func (r *clickRepository) CreateBatch(ctx context.Context, clicks []*Click) erro
 	if len(clicks) == 0 {
 		return nil
 	}
-	return r.db.WithContext(ctx).CreateInBatches(clicks, 500).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.CreateInBatches(&clicks, 500).Error; err != nil {
+			return err
+		}
+
+		// BƯỚC B: Gom nhóm đếm số click theo link_id ngay trên RAM của Go
+		// Ví dụ trong batch có 500 click, nhưng thực chất chỉ thuộc về 3 link khác nhau
+		linkClickMap := make(map[int64]int64)
+		for _, c := range clicks {
+			linkClickMap[c.LinkID]++
+		}
+
+		// Trích xuất các LinkID ra một Slice để chuẩn bị SORT
+		linkIDs := make([]int64, 0, len(linkClickMap))
+		for linkID := range linkClickMap {
+			linkIDs = append(linkIDs, linkID)
+		}
+
+		// ⚠️ Sắp xếp LinkID tăng dần
+		// Nếu Pod 1 update ID [1, 2], Pod 2 cũng update theo thứ tự [1, 2] -> Không bao giờ bị Deadlock.
+		// Nếu không sort, Pod 1 lock 1 chờ 2, Pod 2 lock 2 chờ 1 -> Deadlock!
+		sort.Slice(linkIDs, func(i, j int) bool {
+			return linkIDs[i] < linkIDs[j]
+		})
+
+		for _, linkID := range linkIDs {
+			countDelta := linkClickMap[linkID]
+			err := tx.Model(&Link{}).
+				Where("id = ?", linkID).
+				UpdateColumn("clicks_count", gorm.Expr("clicks_count + ?", countDelta)).
+				Error
+
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }
 
 // CountByLinkID returns the total number of clicks for a link.

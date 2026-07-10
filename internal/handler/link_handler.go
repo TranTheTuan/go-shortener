@@ -161,7 +161,7 @@ func (h *LinkHandler) List(c echo.Context) error {
 			CreatedAt:   it.CreatedAt,
 			ExpiresAt:   it.ExpiresAt,
 			IsActive:    it.IsActive,
-			TotalClicks: it.TotalClicks,
+			TotalClicks: it.ClicksCount,
 		})
 	}
 

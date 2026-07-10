@@ -59,7 +59,7 @@ type LinkService interface {
 	Resolve(ctx context.Context, code string) (*repository.Link, error)
 	// ListByOwner returns a page of the user's links (with click counts) and the
 	// total count. status filters the set ("" = all); limit/offset are clamped.
-	ListByOwner(ctx context.Context, ownerID int64, status string, limit, offset int) ([]*repository.OwnedLink, int64, error)
+	ListByOwner(ctx context.Context, ownerID int64, status string, limit, offset int) ([]*repository.Link, int64, error)
 	// Delete removes the owner's link by code (hard delete). Returns the deleted
 	// link so the caller can drop its dedup entry. NotFound if missing/non-owner.
 	Delete(ctx context.Context, code string, ownerID int64) (*repository.Link, error)
@@ -184,7 +184,7 @@ func (s *linkService) Resolve(ctx context.Context, code string) (*repository.Lin
 
 // ListByOwner returns a clamped page of the owner's links (with click counts)
 // plus the total matching the status filter.
-func (s *linkService) ListByOwner(ctx context.Context, ownerID int64, status string, limit, offset int) ([]*repository.OwnedLink, int64, error) {
+func (s *linkService) ListByOwner(ctx context.Context, ownerID int64, status string, limit, offset int) ([]*repository.Link, int64, error) {
 	limit, offset = ClampPaging(limit, offset)
 	now := s.now().UTC()
 

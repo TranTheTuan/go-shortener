@@ -12,7 +12,7 @@ type mockLinkRepo struct {
 	createFn           func(ctx context.Context, link *repository.Link) (*repository.Link, error)
 	getByCodeFn        func(ctx context.Context, code string) (*repository.Link, error)
 	getByOwnerAndURLFn func(ctx context.Context, ownerID *int64, url string) (*repository.Link, error)
-	listByOwnerFn      func(ctx context.Context, ownerID int64, status string, now time.Time, limit, offset int) ([]*repository.OwnedLink, error)
+	listByOwnerFn      func(ctx context.Context, ownerID int64, status string, now time.Time, limit, offset int) ([]*repository.Link, error)
 	countByOwnerFn     func(ctx context.Context, ownerID int64, status string, now time.Time) (int64, error)
 	deleteFn           func(ctx context.Context, id int64) error
 	updateFn           func(ctx context.Context, id int64, fields map[string]any) error
@@ -21,7 +21,7 @@ type mockLinkRepo struct {
 	updateCalls        int
 }
 
-func (m *mockLinkRepo) ListByOwner(ctx context.Context, ownerID int64, status string, now time.Time, limit, offset int) ([]*repository.OwnedLink, error) {
+func (m *mockLinkRepo) ListByOwner(ctx context.Context, ownerID int64, status string, now time.Time, limit, offset int) ([]*repository.Link, error) {
 	if m.listByOwnerFn != nil {
 		return m.listByOwnerFn(ctx, ownerID, status, now, limit, offset)
 	}
