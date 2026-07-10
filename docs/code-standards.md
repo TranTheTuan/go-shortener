@@ -392,7 +392,7 @@ Configure via environment:
 - If set, Keycloak must have audience mapper to include backend client in `aud` claim
 - If not set, skip audience check (useful for testing or single-audience realms)
 
-## Logging
+## Logging & Trace Correlation
 
 ### Structured Logging
 Use `log/slog` (Go 1.21+ standard library):
@@ -402,6 +402,8 @@ slog.Info("user created", "user_id", user.ID, "email", user.Email)
 slog.Error("database error", "error", err, "query", "SELECT...")
 slog.Debug("cache hit", "code", code)
 ```
+
+**Trace Correlation**: When tracing is enabled, `observability.TraceHandler` wraps the slog handler and automatically stamps `trace_id`/`span_id` from the current OpenTelemetry span. This enables Loki derived fields to jump to Tempo traces. No explicit logging needed; correlation is automatic.
 
 ### What to Log
 - Request entry/exit (automatic via middleware)
@@ -416,7 +418,8 @@ slog.Debug("cache hit", "code", code)
 
 ---
 
-**Last Updated**: 2026-06-30  
+**Last Updated**: 2026-07-10  
 **Enforced**: Commit time (code reviews check standards)  
 **Flexibility**: Prioritize working code over lint perfection  
-**Auth Model**: Keycloak OIDC resource server (no self-issued tokens)
+**Auth Model**: Keycloak OIDC resource server (no self-issued tokens)  
+**Tracing**: OpenTelemetry OTLP gRPC → Tempo (opt-in via `TRACING_ENABLED`)

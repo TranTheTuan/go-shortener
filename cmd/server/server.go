@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/redis/go-redis/extra/redisotel/v9"
+
 	"github.com/TranTheTuan/go-shortener/configs"
 	"github.com/TranTheTuan/go-shortener/internal/events"
 	"github.com/TranTheTuan/go-shortener/internal/handler"
@@ -32,6 +34,20 @@ func runServer() error {
 		return err
 	}
 
+	// Install tracing first so the GORM/Redis instrumentation below binds to the
+	// live TracerProvider. Deferred (LIFO) so span flush runs LAST on exit —
+	// after Echo + metrics teardown — and on EVERY return path, including error
+	// exits where buffered spans matter most.
+	tpShutdown, err := setupTracing(context.Background(), cfg, "go-shortener-server")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = tpShutdown(ctx)
+	}()
+
 	// Connect to PostgreSQL. Schema migrations are run manually via the
 	// Makefile (`make migrate-up`), not on server startup.
 	db, err := openPostgres(cfg)
@@ -41,6 +57,11 @@ func runServer() error {
 
 	rdb, err := database.SetupRedis(cfg.Redis)
 	if err != nil {
+		return err
+	}
+	// Trace actual Redis calls. L1 cache hits skip Redis, so no span there —
+	// the redirect hot path stays untouched.
+	if err := redisotel.InstrumentTracing(rdb.Client); err != nil {
 		return err
 	}
 
@@ -199,6 +220,8 @@ func runServer() error {
 	if metricsShutdown != nil {
 		_ = metricsShutdown(shutdownCtx)
 	}
+	// Span flush is handled by the deferred tpShutdown (runs after this returns,
+	// LIFO — last, as intended).
 
 	slog.Info("server stopped gracefully")
 	return nil

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/plugin/kotel"
 
 	"github.com/TranTheTuan/go-shortener/configs"
 	"github.com/TranTheTuan/go-shortener/internal/worker"
@@ -18,6 +19,7 @@ import (
 type BulkJobConsumer struct {
 	cl     *kgo.Client
 	worker *worker.BulkJobWorker
+	tracer *kotel.Tracer
 }
 
 func NewBulkJobConsumer(cfg configs.KafkaConfig, w *worker.BulkJobWorker) (*BulkJobConsumer, error) {
@@ -32,7 +34,7 @@ func NewBulkJobConsumer(cfg configs.KafkaConfig, w *worker.BulkJobWorker) (*Bulk
 	if err != nil {
 		return nil, err
 	}
-	return &BulkJobConsumer{cl: cl, worker: w}, nil
+	return &BulkJobConsumer{cl: cl, worker: w, tracer: newKafkaTracer()}, nil
 }
 
 // Run polls Kafka and dispatches jobs until ctx is cancelled.
@@ -51,17 +53,23 @@ func (c *BulkJobConsumer) Run(ctx context.Context) error {
 		var toCommit []*kgo.Record
 
 		fetches.EachRecord(func(rec *kgo.Record) {
+			// Continue the producer's trace: the fetch hook put the extracted
+			// parent in rec.Context; WithProcessSpan roots the processing span
+			// under it so worker + DB spans nest into one end-to-end trace.
+			procCtx, span := c.tracer.WithProcessSpan(rec)
+			defer span.End()
+
 			var ev BulkJobEvent
 			if err := json.Unmarshal(rec.Value, &ev); err != nil {
 				// Poison message — skip forever (matches click consumer pattern).
-				slog.Warn("bulk consumer: decode failed, skipping", "error", err)
+				slog.WarnContext(procCtx, "bulk consumer: decode failed, skipping", "error", err)
 				toCommit = append(toCommit, rec)
 				return
 			}
 
-			if err := c.worker.Process(ctx, ev.JobID); err != nil {
+			if err := c.worker.Process(procCtx, ev.JobID); err != nil {
 				// Do not commit — record will be redelivered.
-				slog.Error("bulk consumer: process failed", "job_id", ev.JobID, "error", err)
+				slog.ErrorContext(procCtx, "bulk consumer: process failed", "job_id", ev.JobID, "error", err)
 				return
 			}
 

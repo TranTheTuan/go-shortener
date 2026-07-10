@@ -533,7 +533,32 @@ Clients → Load Balancer → [Echo 1, Echo 2, ...]
 - **Format**: JSON via `log/slog`
 - **Levels**: Info, Warn, Error, Debug
 - **Request tracking**: Request ID middleware adds ID to all logs
+- **Trace correlation**: `slog_trace_handler` stamps `trace_id`/`span_id` on each record → Loki derived field jumps to Tempo
 - **What to log**: Errors, important state changes, not secrets
+
+### Distributed Tracing (OpenTelemetry → Tempo)
+
+**Export Path**: App (OTLP gRPC) → Alloy DaemonSet (forward-only) → Tempo (filesystem storage, 72h retention)
+
+**Sampling**: Head-based (ParentBased + TraceIDRatioBased, default 100% keep). Decision propagated via W3C `tracecontext` over HTTP + Kafka.
+
+**Auto-instrumentation**:
+| Library | Coverage |
+|---------|----------|
+| `otelecho` | HTTP handlers (all routes except `GET /:code` excluded to protect L1-cache hot path) |
+| `redisotel` | Redis client calls |
+| `otelgorm` | GORM queries (PostgreSQL) |
+| `kotel` | Kafka produce/consume |
+
+**Config** (`pkg/observability/tracing.go`):
+- `TRACING_ENABLED`: Opt-in, default false (no-op if disabled)
+- `TRACING_OTLP_ENDPOINT`: Alloy gRPC receiver (e.g., `alloy:4317`)
+- `TRACING_SAMPLE_RATIO`: 0.0–1.0 (default 1.0 = 100% keep)
+- `SERVICE_VERSION`: Build/deploy version (git SHA) for trace attributes
+
+**Async Trace Continuity**: Bulk-job producer → Kafka → consumer → PostgreSQL appears as single trace (via Kafka baggage propagation).
+
+**Tempo Integration**: Traces stored by `trace_id`; `tracesToLogsV2` links back to Loki logs.
 
 ### Pprof Debugging
 - **Endpoint**: `localhost:6060` (development only, via environment config)
@@ -565,7 +590,8 @@ Clients → Load Balancer → [Echo 1, Echo 2, ...]
 
 ---
 
-**Last Updated**: 2026-07-06  
+**Last Updated**: 2026-07-10  
 **Diagrams**: ASCII for documentation clarity  
-**Status**: Production-ready single-instance architecture  
-**Auth Model**: Keycloak OIDC resource server (v1.1+)
+**Status**: Production-ready single-instance architecture with distributed tracing (v1.3)  
+**Auth Model**: Keycloak OIDC resource server (v1.1+)  
+**Observability**: Metrics (Prometheus) + Tracing (OpenTelemetry → Tempo) + Logging (slog with trace correlation)

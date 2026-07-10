@@ -60,7 +60,7 @@ go-shortener/
 │   └── router/                    # Route setup (1 file)
 │       └── router.go              # Echo wiring + route registration (72 lines)
 │
-├── pkg/                           # Reusable packages (9 files)
+├── pkg/                           # Reusable packages (13 files)
 │   ├── apperror/                  # Structured error type (85 lines)
 │   │   └── apperror.go            # Error type + constructors (BadRequest, NotFound, etc.)
 │   │
@@ -75,9 +75,15 @@ go-shortener/
 │   │   ├── verifier.go            # go-oidc wrapper (RS256, lazy JWKS)
 │   │   └── verifier_test.go       # Token verification tests
 │   │
-│   └── shortcode/                 # Random code generation (2 files + tests)
-│       ├── shortcode.go           # Crypto-random base62 generator (35 lines)
-│       └── shortcode_test.go
+│   ├── shortcode/                 # Random code generation (2 files + tests)
+│   │   ├── shortcode.go           # Crypto-random base62 generator (35 lines)
+│   │   └── shortcode_test.go
+│   │
+│   └── observability/             # OpenTelemetry tracing + slog correlation (4 files)
+│       ├── tracing.go             # OTLP gRPC setup, head-based sampling (75 lines)
+│       ├── tracing_test.go        # Tracing tests
+│       ├── slog_trace_handler.go  # slog wrapper stamps trace_id/span_id (40 lines)
+│       └── slog_trace_handler_test.go
 │
 ├── migrations/                    # SQL migrations (12 files: 6 up + 6 down)
 │   ├── 000001_create_users_table.{up,down}.sql
@@ -397,22 +403,23 @@ Migration 11: Link management (is_active)
 - ✅ URL shortening with collision retry
 - ✅ Click analytics (async recording)
 - ✅ Redis caching (cache-first link resolution)
-- ✅ API Key authentication (fail-closed)
 - ✅ Keycloak OIDC authentication (v1.1)
 - ✅ Link Management (CRUD): Delete, Enable/Disable, Edit expiry (v1.2)
-- ✅ Swagger/OpenAPI documentation (pending regeneration for v1.2)
+- ✅ Prometheus metrics + HTTP RED instrumentation (v1.3)
+- ✅ Distributed tracing via OpenTelemetry → Tempo (v1.3)
+- ✅ slog ↔ trace correlation (trace_id/span_id stamped on logs) (v1.3)
 - ✅ Database migrations (manual control)
 - ✅ Error handling (structured apperror type)
 
 ### In Progress
-- 🔄 Swagger regeneration (`make swag` for v1.2 Link Management endpoints)
+- 🔄 Swagger regeneration (`make swag` for v1.2–v1.3 endpoints)
 
 ### Future (Planned)
+- 📅 Tempo metrics-generator (service graph, phase 2)
+- 📅 Worker instrumentation (bulk-job consumer, etc.)
 - 📅 Rate limiting per API key
 - 📅 Admin dashboard (web UI)
 - 📅 Custom short codes
-- 📅 Link ownership & permissions
-- 📅 Prometheus metrics
 - 📅 Multi-database support (MySQL)
 
 ---
@@ -512,15 +519,16 @@ make migrate-create     # Create new migration
 
 ## Next Steps
 
-1. **Regenerate Swagger** (v1.2): Run `make swag` to update OpenAPI docs with new Link Management endpoints
-2. **Deploy v1.2** (Link Management CRUD): Staging + production rollout
-3. **Role-based authorization** (v1.3): Keycloak realm roles mapping + admin endpoints
-4. **Add rate limiting** (v1.4): Per-user quota enforcement
-5. **Observability** (v1.5): Prometheus metrics + Keycloak health checks
+1. **Regenerate Swagger**: Run `make swag` to update OpenAPI docs with v1.2–v1.3 endpoints
+2. **Worker instrumentation** (phase 2): Trace bulk-job consumer async span chain
+3. **Tempo metrics-generator** (phase 2): Service graph generation
+4. **Role-based authorization** (v1.4): Keycloak realm roles mapping + admin endpoints
+5. **Rate limiting** (v1.5): Per-user quota enforcement
 
 ---
 
-**Last Updated**: 2026-07-06  
+**Last Updated**: 2026-07-10  
 **Maintainer**: @TranTheTuan  
 **License**: MIT  
-**Auth Model**: Keycloak OIDC resource server (v1.1+)
+**Auth Model**: Keycloak OIDC resource server (v1.1+)  
+**Observability**: Prometheus metrics + OpenTelemetry tracing → Tempo + slog trace correlation

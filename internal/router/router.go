@@ -7,6 +7,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	echoSwagger "github.com/swaggo/echo-swagger"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
 
 	_ "github.com/TranTheTuan/go-shortener/docs/swagger" // generated OpenAPI spec
 	"github.com/TranTheTuan/go-shortener/internal/handler"
@@ -46,6 +47,13 @@ func New(h Handlers, deps Deps) *echo.Echo {
 	e.Use(middleware.RequestID())
 	// e.Use(middleware.RequestLogger())
 	e.Use(middleware.Recover())
+	// Trace every request as a span keyed by route template. Skip the public
+	// redirect hot path (GET /:code) — cache-hit 302s are low trace value and a
+	// per-request span would erode the L1-cache throughput win — plus infra
+	// endpoints. No-op when tracing is disabled (global tracer is a no-op).
+	e.Use(otelecho.Middleware("go-shortener-server", otelecho.WithSkipper(func(c echo.Context) bool {
+		return skipTrace(c.Path())
+	})))
 	// RED metrics (duration + in-flight) for every request, keyed by route template.
 	e.Use(appmw.Metrics())
 	// Adds ETag + Cache-Control to the embedded SPA so unchanged assets 304 and
@@ -54,6 +62,18 @@ func New(h Handlers, deps Deps) *echo.Echo {
 
 	registerRoutes(e, h, deps)
 	return e
+}
+
+// skipTrace reports whether a route template should NOT get a tracing span.
+// The redirect catch-all (/:code) is excluded to protect the L1-cache hot path;
+// health/metrics are infra noise.
+func skipTrace(routePath string) bool {
+	switch routePath {
+	case "/:code", "/healthz", "/metrics":
+		return true
+	default:
+		return false
+	}
 }
 
 func registerRoutes(e *echo.Echo, h Handlers, deps Deps) {
