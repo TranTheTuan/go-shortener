@@ -9,10 +9,10 @@ import (
 
 // mockLinkRepo is a configurable test double for repository.LinkRepository.
 type mockLinkRepo struct {
-	createFn              func(ctx context.Context, link *repository.Link) (*repository.Link, error)
-	getByCodeFn           func(ctx context.Context, code string) (*repository.Link, error)
-	getActiveByCodeFn     func(ctx context.Context, code string) (*repository.Link, error)
-	getByOwnerAndURLFn    func(ctx context.Context, ownerID *int64, url string) (*repository.Link, error)
+	createFn           func(ctx context.Context, link *repository.Link) (*repository.Link, error)
+	getByCodeFn        func(ctx context.Context, code string) (*repository.Link, error)
+	getActiveByCodeFn  func(ctx context.Context, code string) (*repository.Link, error)
+	getByOwnerAndURLFn func(ctx context.Context, ownerID *int64, url string) (*repository.Link, error)
 	listByOwnerFn      func(ctx context.Context, ownerID int64, status string, now time.Time, limit, offset int) ([]*repository.Link, error)
 	countByOwnerFn     func(ctx context.Context, ownerID int64, status string, now time.Time) (int64, error)
 	deleteFn           func(ctx context.Context, id int64) error
