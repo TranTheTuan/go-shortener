@@ -167,8 +167,35 @@ func (h *BulkJobHandler) ListJobs(c echo.Context) error {
 	return response.Success(c, http.StatusOK, out)
 }
 
-// GetJob handles GET /api/bulk-jobs/:id.
+// GetResultURL handles GET /api/bulk-jobs/:id/download-url.
 //
+// @Summary      Get a presigned download URL for a completed bulk job
+// @Description  Returns a short-lived presigned URL to download the result file. Returns 409 if job is not yet completed.
+// @Tags         bulk-jobs
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      int  true  "Bulk job ID"
+// @Success      200  {object}  map[string]string
+// @Failure      401  {object}  response.Envelope  "missing or invalid token"
+// @Failure      404  {object}  response.Envelope  "job not found"
+// @Failure      409  {object}  response.Envelope  "result not available yet"
+// @Router       /api/bulk-jobs/{id}/download-url [get]
+func (h *BulkJobHandler) GetResultURL(c echo.Context) error {
+	owner, ok := appmw.UserIDFrom(c)
+	if !ok {
+		return response.Error(c, apperror.New(http.StatusUnauthorized, "UNAUTHORIZED", "not authenticated"))
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		return response.Error(c, apperror.NotFound("job not found"))
+	}
+	_, url, err := h.svc.GetJob(c.Request().Context(), id, owner)
+	if err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, http.StatusOK, map[string]string{"url": url})
+}
+
 // @Summary      Get a bulk job by ID
 // @Description  Returns the job's status/progress and, once finished, a result_url to download the processed file.
 // @Tags         bulk-jobs
