@@ -69,7 +69,7 @@ func New(h Handlers, deps Deps) *echo.Echo {
 // health/metrics are infra noise.
 func skipTrace(routePath string) bool {
 	switch routePath {
-	case "/:code", "/healthz", "/metrics", "/static", "/swagger/*", "/app-config.json":
+	case "/:code", "/healthz", "/metrics", "/static*", "/swagger/*", "/app-config.json":
 		return true
 	default:
 		return false
