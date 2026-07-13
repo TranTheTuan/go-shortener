@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -255,7 +254,7 @@ func (s *linkService) Resolve(ctx context.Context, code string) (*repository.Lin
 		metrics.RecordCacheLookup(ctx, false)
 	}
 
-	link, err := s.repo.GetByCode(ctx, code)
+	link, err := s.repo.GetActiveByCode(ctx, code)
 	if errors.Is(err, repository.ErrNotFound) {
 		return nil, apperror.NotFound("short link not found")
 	}
@@ -264,12 +263,6 @@ func (s *linkService) Resolve(ctx context.Context, code string) (*repository.Lin
 	}
 	if link.ExpiresAt != nil && link.ExpiresAt.Before(s.now().UTC()) {
 		return nil, apperror.Gone("short link has expired")
-	}
-	// Disabled links stop redirecting. Checked before caching so an inactive
-	// link is never cached; re-enabling works on the next resolve.
-	if !link.IsActive {
-		// Distinct code (still 410) so redirect metrics separate disabled from expired.
-		return nil, apperror.New(http.StatusGone, "DISABLED", "short link is disabled")
 	}
 
 	s.cacheSet(ctx, link)

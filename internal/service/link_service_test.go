@@ -356,18 +356,17 @@ func TestLinkService_ListByOwner_RepoError(t *testing.T) {
 	wantStatus(t, err, http.StatusInternalServerError)
 }
 
-func TestLinkService_Resolve_InactiveReturnsGone(t *testing.T) {
+func TestLinkService_Resolve_InactiveReturnsNotFound(t *testing.T) {
 	repo := &mockLinkRepo{
-		getByCodeFn: func(_ context.Context, code string) (*repository.Link, error) {
-			return &repository.Link{ID: 1, ShortCode: code, OriginalURL: "https://example.com", IsActive: false}, nil
+		getByCodeFn: func(_ context.Context, _ string) (*repository.Link, error) {
+			return nil, repository.ErrNotFound // active check happens in repo
 		},
 	}
 	cache := &mockLinkCacheRepository{}
 	svc := NewLinkService(repo, cache, 7, 24*time.Hour)
 
 	_, err := svc.Resolve(context.Background(), "disabled")
-	wantStatus(t, err, http.StatusGone)
-	// Verify cache.Set was NOT called for inactive link
+	wantStatus(t, err, http.StatusNotFound)
 	if cache.setCalls != 0 {
 		t.Errorf("cache.setCalls = %d, want 0 (inactive links must not be cached)", cache.setCalls)
 	}

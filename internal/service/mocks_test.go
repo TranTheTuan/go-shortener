@@ -11,6 +11,7 @@ import (
 type mockLinkRepo struct {
 	createFn           func(ctx context.Context, link *repository.Link) (*repository.Link, error)
 	getByCodeFn        func(ctx context.Context, code string) (*repository.Link, error)
+	getActiveByCodeFn  func(ctx context.Context, code string) (*repository.Link, error)
 	getByOwnerAndURLFn func(ctx context.Context, ownerID *int64, url string) (*repository.Link, error)
 	listByOwnerFn      func(ctx context.Context, ownerID int64, status string, now time.Time, limit, offset int) ([]*repository.Link, error)
 	countByOwnerFn     func(ctx context.Context, ownerID int64, status string, now time.Time) (int64, error)
@@ -53,6 +54,13 @@ func (m *mockLinkRepo) Create(ctx context.Context, link *repository.Link) (*repo
 }
 
 func (m *mockLinkRepo) GetByCode(ctx context.Context, code string) (*repository.Link, error) {
+	return m.getByCodeFn(ctx, code)
+}
+
+func (m *mockLinkRepo) GetActiveByCode(ctx context.Context, code string) (*repository.Link, error) {
+	if m.getActiveByCodeFn != nil {
+		return m.getActiveByCodeFn(ctx, code)
+	}
 	return m.getByCodeFn(ctx, code)
 }
 

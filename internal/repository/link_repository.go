@@ -36,6 +36,9 @@ type LinkRepository interface {
 	// short_code are skipped (ON CONFLICT DO NOTHING) and returned with ID == 0.
 	CreateBatch(ctx context.Context, links []*Link) ([]*Link, error)
 	GetByCode(ctx context.Context, code string) (*Link, error)
+	// GetActiveByCode returns the link only if it exists and is active.
+	// ErrNotFound if absent or inactive — callers never need to distinguish.
+	GetActiveByCode(ctx context.Context, code string) (*Link, error)
 	// GetByOwnerAndURL finds a link for the given URL scoped to one owner.
 	// ownerID nil matches the unowned (API-key) group.
 	GetByOwnerAndURL(ctx context.Context, ownerID *int64, url string) (*Link, error)
@@ -108,6 +111,19 @@ func (r *linkRepository) Create(ctx context.Context, link *Link) (*Link, error) 
 func (r *linkRepository) GetByCode(ctx context.Context, code string) (*Link, error) {
 	var link Link
 	if err := r.db.WithContext(ctx).Where("short_code = ?", code).First(&link).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &link, nil
+}
+
+// GetActiveByCode returns the link only if it exists and is_active=true.
+func (r *linkRepository) GetActiveByCode(ctx context.Context, code string) (*Link, error) {
+	var link Link
+	err := r.db.WithContext(ctx).Where("short_code = ? AND is_active = true", code).First(&link).Error
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
 		}
