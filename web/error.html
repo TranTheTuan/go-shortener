@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{.Title}} — go/short</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+  <script>document.documentElement.setAttribute("data-theme", localStorage.getItem("theme") || "light");</script>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f2f5fb; --panel: #ffffff; --ink: #0f1a30;
+      --muted: #56617a; --faint: #8a93a8; --accent: #2f6bff;
+      --line: rgba(15,26,48,.1); --display: "Bricolage Grotesque", sans-serif;
+      --mono: "JetBrains Mono", monospace;
+    }
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #080d1a; --panel: #101a30; --ink: #e9eefb;
+      --muted: #94a1bd; --faint: #6f7c98; --accent: #4f83ff;
+      --line: rgba(233,238,251,.08);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100dvh; display: grid; place-items: center;
+      background: var(--bg); color: var(--ink);
+      font-family: var(--display); transition: background-color 0.25s, color 0.25s;
+    }
+    .card {
+      text-align: center; padding: 3rem 2.5rem; max-width: 420px; width: 100%;
+      background: var(--panel); border: 1px solid var(--line);
+      border-radius: 1.25rem; box-shadow: 0 4px 32px rgba(0,0,0,.06);
+    }
+    .code {
+      font-family: var(--mono); font-size: 5rem; font-weight: 600;
+      line-height: 1; letter-spacing: -0.04em; color: var(--accent);
+    }
+    h1 { font-size: 1.35rem; font-weight: 700; margin: 0.75rem 0 0.5rem; }
+    p  { font-size: 0.95rem; color: var(--muted); line-height: 1.55; }
+    .home {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      margin-top: 1.75rem; padding: 0.55rem 1.2rem;
+      background: var(--accent); color: #fff; font-size: 0.9rem; font-weight: 600;
+      border: none; border-radius: 0.6rem; cursor: pointer; text-decoration: none;
+      transition: opacity 0.15s;
+    }
+    .home:hover { opacity: 0.88; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="code">{{.Code}}</div>
+    <h1>{{.Title}}</h1>
+    <p>{{.Message}}</p>
+    <a class="home" href="/">← Back to go/short</a>
+  </div>
+</body>
+</html>

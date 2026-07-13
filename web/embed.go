@@ -7,5 +7,5 @@ import "embed"
 // Files holds the frontend: index.html plus the static/ directory (app.js,
 // styles.css, the vendored keycloak-js adapter).
 //
-//go:embed index.html static
+//go:embed index.html error.html static
 var Files embed.FS

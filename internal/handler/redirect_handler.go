@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"bytes"
+	"html/template"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -11,7 +14,10 @@ import (
 	"github.com/TranTheTuan/go-shortener/pkg/apperror"
 	"github.com/TranTheTuan/go-shortener/pkg/metrics"
 	"github.com/TranTheTuan/go-shortener/pkg/response"
+	"github.com/TranTheTuan/go-shortener/web"
 )
+
+var errorTmpl = template.Must(template.ParseFS(web.Files, "error.html"))
 
 // RedirectHandler serves the public short-link redirect endpoint.
 type RedirectHandler struct {
@@ -42,7 +48,10 @@ func (h *RedirectHandler) Redirect(c echo.Context) error {
 	link, err := h.links.Resolve(ctx, c.Param("code"))
 	metrics.RecordRedirect(ctx, redirectResult(err))
 	if err != nil {
-		return response.Error(c, err) // 404 / 410 / 500
+		if isBrowserRequest(c) {
+			return renderErrorPage(c, err)
+		}
+		return response.Error(c, err)
 	}
 
 	h.clicks.Publish(events.ClickEvent{
@@ -54,6 +63,36 @@ func (h *RedirectHandler) Redirect(c echo.Context) error {
 	})
 
 	return c.Redirect(http.StatusFound, link.OriginalURL)
+}
+
+// isBrowserRequest returns true when the client signals it accepts HTML
+// (browsers always send Accept: text/html).
+func isBrowserRequest(c echo.Context) bool {
+	return strings.Contains(c.Request().Header.Get("Accept"), "text/html")
+}
+
+type errorPageData struct {
+	Code    int
+	Title   string
+	Message string
+}
+
+func renderErrorPage(c echo.Context, err error) error {
+	data := errorPageData{
+		Code:    http.StatusNotFound,
+		Title:   "Link not found",
+		Message: "This link doesn't exist or has been removed.",
+	}
+	if ae, ok := apperror.As(err); ok && ae.Code == "GONE" {
+		data.Code = http.StatusGone
+		data.Title = "Link expired"
+		data.Message = "This link has expired and is no longer available."
+	}
+	var buf bytes.Buffer
+	if tmplErr := errorTmpl.Execute(&buf, data); tmplErr != nil {
+		return response.Error(c, err)
+	}
+	return c.HTMLBlob(data.Code, buf.Bytes())
 }
 
 // redirectResult classifies a Resolve outcome into a bounded metric label.
