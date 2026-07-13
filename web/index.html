@@ -127,13 +127,17 @@
         <section class="view" data-view="stats" hidden>
           <div class="panel">
             <form id="stats-form">
-              <label for="code">Look up click stats by short code</label>
+              <label for="code">Short code or full short URL</label>
               <div class="row">
-                <input id="code" type="text" placeholder="Ab3xY7q" />
+                <input id="code" type="text" placeholder="Ab3xY7q or https://go-short.tonytran.xyz/Ab3xY7q" />
                 <button type="submit">Get stats</button>
               </div>
             </form>
             <p id="stats-result" class="result"></p>
+            <table id="stats-clicks-table" hidden>
+              <thead><tr><th>Time</th><th>Referrer</th><th>IP</th></tr></thead>
+              <tbody id="stats-clicks-body"></tbody>
+            </table>
           </div>
         </section>
 

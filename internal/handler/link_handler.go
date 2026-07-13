@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -289,7 +290,12 @@ func atoiDefault(s string, def int) int {
 // @Failure      404   {object}  response.Envelope  "short link not found"
 // @Router       /api/links/{code}/stats [get]
 func (h *LinkHandler) Stats(c echo.Context) error {
-	stats, err := h.analytics.Stats(c.Request().Context(), c.Param("code"))
+	code := c.Param("code")
+	// Support full short URL input: strip everything up to and including the last "/".
+	if i := strings.LastIndex(code, "/"); i >= 0 {
+		code = code[i+1:]
+	}
+	stats, err := h.analytics.Stats(c.Request().Context(), code)
 	if err != nil {
 		return response.Error(c, err)
 	}
