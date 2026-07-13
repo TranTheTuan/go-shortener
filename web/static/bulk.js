@@ -159,13 +159,24 @@ function pollJob(api, id) {
   }, POLL_MS);
 }
 
-function resultCell(job) {
+function resultCell(job, api) {
   const td = document.createElement("td");
-  if (job.status === "completed" && job.result_url) {
+  if (job.status === "completed") {
     const a = document.createElement("a");
-    a.href = job.result_url;
     a.textContent = "Download";
+    a.href = "#";
     a.rel = "noopener";
+    a.onclick = async (ev) => {
+      ev.preventDefault();
+      try {
+        const res = await api(`/api/bulk-jobs/${job.id}/download-url`);
+        if (!res.ok) { text("bulk-jobs-status", "Failed to get download URL."); return; }
+        const { data } = await res.json();
+        window.open(data.url, "_blank", "noopener");
+      } catch {
+        text("bulk-jobs-status", "Network error.");
+      }
+    };
     td.append(a);
   } else {
     td.textContent = "—";
@@ -205,7 +216,7 @@ async function loadJobs(api) {
       td.textContent = v;
       tr.append(td);
     }
-    tr.append(resultCell(job));
+    tr.append(resultCell(job, api));
     body.append(tr);
   }
   $("bulk-jobs-table").hidden = false;

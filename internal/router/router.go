@@ -121,6 +121,7 @@ func registerRoutes(e *echo.Echo, h Handlers, deps Deps) {
 		bulk.POST("", h.BulkJob.ConfirmUpload)
 		bulk.GET("", h.BulkJob.ListJobs)
 		bulk.GET("/:id", h.BulkJob.GetJob)
+		bulk.GET("/:id/download-url", h.BulkJob.GetResultURL)
 	}
 
 	// Public redirect. Registered last; Echo prioritizes the static /healthz,

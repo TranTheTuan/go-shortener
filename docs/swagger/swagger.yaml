@@ -102,6 +102,8 @@ definitions:
         type: string
       expires_at:
         type: string
+      is_active:
+        type: boolean
       original_url:
         type: string
       short_code:
@@ -110,6 +112,19 @@ definitions:
         type: string
       total_clicks:
         type: integer
+    type: object
+  internal_handler.linkResponse:
+    properties:
+      expires_at:
+        type: string
+      is_active:
+        type: boolean
+      original_url:
+        type: string
+      short_code:
+        type: string
+      short_url:
+        type: string
     type: object
   internal_handler.listResponse:
     properties:
@@ -123,6 +138,13 @@ definitions:
         type: integer
       total:
         type: integer
+    type: object
+  internal_handler.updateLinkRequest:
+    properties:
+      expires_at:
+        type: string
+      is_active:
+        type: boolean
     type: object
   internal_handler.uploadURLRequest:
     properties:
@@ -265,6 +287,42 @@ paths:
       summary: Get a bulk job by ID
       tags:
       - bulk-jobs
+  /api/bulk-jobs/{id}/download-url:
+    get:
+      description: Returns a short-lived presigned URL to download the result file.
+        Returns 409 if job is not yet completed.
+      parameters:
+      - description: Bulk job ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: missing or invalid token
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "404":
+          description: job not found
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "409":
+          description: result not available yet
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Get a presigned download URL for a completed bulk job
+      tags:
+      - bulk-jobs
   /api/bulk-jobs/template:
     get:
       description: 'Returns an empty template (columns: url, result) for the user
@@ -339,6 +397,14 @@ paths:
         in: query
         name: offset
         type: integer
+      - description: Filter by status
+        enum:
+        - active
+        - disabled
+        - expired
+        in: query
+        name: status
+        type: string
       produces:
       - application/json
       responses:
@@ -346,6 +412,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/internal_handler.listResponse'
+        "400":
+          description: invalid status
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
         "401":
           description: missing or invalid token
           schema:
@@ -389,6 +459,72 @@ paths:
       security:
       - BearerAuth: []
       summary: Create a short link
+      tags:
+      - links
+  /api/links/{code}:
+    delete:
+      description: Permanently deletes the link and its clicks (cascade). Owner-only.
+      parameters:
+      - description: Short code
+        in: path
+        name: code
+        required: true
+        type: string
+      responses:
+        "204":
+          description: deleted
+        "401":
+          description: missing or invalid token
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "404":
+          description: short link not found
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Delete a short link
+      tags:
+      - links
+    put:
+      consumes:
+      - application/json
+      description: 'Replaces the mutable state: set/clear expires_at (null clears)
+        and toggle is_active. Owner-only.'
+      parameters:
+      - description: Short code
+        in: path
+        name: code
+        required: true
+        type: string
+      - description: expires_at (RFC 3339 or null) + is_active
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.updateLinkRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_handler.linkResponse'
+        "400":
+          description: invalid body
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "401":
+          description: missing or invalid token
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "404":
+          description: short link not found
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Update a short link
       tags:
       - links
   /api/links/{code}/stats:
