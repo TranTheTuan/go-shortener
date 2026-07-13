@@ -104,8 +104,6 @@ func redirectResult(err error) string {
 		switch ae.Code {
 		case "NOT_FOUND":
 			return "notfound"
-		case "DISABLED":
-			return "disabled"
 		case "GONE":
 			return "expired"
 		}
