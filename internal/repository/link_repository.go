@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Link is the domain entity for a shortened URL. GORM tags define the table
@@ -31,6 +32,9 @@ const (
 // LinkRepository defines the persistence operations for short links.
 type LinkRepository interface {
 	Create(ctx context.Context, link *Link) (*Link, error)
+	// CreateBatch inserts multiple links in one statement. Rows that collide on
+	// short_code are skipped (ON CONFLICT DO NOTHING) and returned with ID == 0.
+	CreateBatch(ctx context.Context, links []*Link) ([]*Link, error)
 	GetByCode(ctx context.Context, code string) (*Link, error)
 	// GetByOwnerAndURL finds a link for the given URL scoped to one owner.
 	// ownerID nil matches the unowned (API-key) group.
@@ -73,6 +77,19 @@ type linkRepository struct {
 // NewLinkRepository wires a LinkRepository to a GORM database handle.
 func NewLinkRepository(db *gorm.DB) LinkRepository {
 	return &linkRepository{db: db}
+}
+
+// 1000 rows/batch keeps pg bind-params well under the 65535 limit.
+const createBatchChunkSize = 1000
+
+func (r *linkRepository) CreateBatch(ctx context.Context, links []*Link) ([]*Link, error) {
+	err := r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{DoNothing: true}).
+		CreateInBatches(links, createBatchChunkSize).Error
+	if err != nil {
+		return nil, err
+	}
+	return links, nil
 }
 
 // Create inserts a new link. A unique-constraint violation on short_code is

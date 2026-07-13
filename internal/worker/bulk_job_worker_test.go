@@ -55,6 +55,18 @@ func (m *mockLinkService) Create(_ context.Context, in service.CreateLinkInput) 
 	}
 	return &repository.Link{ShortCode: strings.TrimPrefix(m.shortURL, "http://short/")}, false, nil
 }
+func (m *mockLinkService) BatchCreate(_ context.Context, _ int64, urls []string) ([]*repository.Link, []error) {
+	links := make([]*repository.Link, len(urls))
+	errs := make([]error, len(urls))
+	for i, u := range urls {
+		if u == "" || m.shortURL == "" {
+			errs[i] = apperror.BadRequest("invalid url")
+		} else {
+			links[i] = &repository.Link{ID: int64(i + 1), ShortCode: strings.TrimPrefix(m.shortURL, "http://short/")}
+		}
+	}
+	return links, errs
+}
 func (m *mockLinkService) Resolve(_ context.Context, _ string) (*repository.Link, error) {
 	return nil, nil
 }

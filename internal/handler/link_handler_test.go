@@ -26,6 +26,9 @@ type stubLinkService struct {
 func (s stubLinkService) Create(context.Context, service.CreateLinkInput) (*repository.Link, bool, error) {
 	return nil, false, nil
 }
+func (s stubLinkService) BatchCreate(_ context.Context, _ int64, urls []string) ([]*repository.Link, []error) {
+	return make([]*repository.Link, len(urls)), make([]error, len(urls))
+}
 func (s stubLinkService) Resolve(context.Context, string) (*repository.Link, error) { return nil, nil }
 func (s stubLinkService) ListByOwner(ctx context.Context, ownerID int64, status string, limit, offset int) ([]*repository.Link, int64, error) {
 	if s.listFn != nil {
