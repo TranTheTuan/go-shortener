@@ -35,6 +35,18 @@ func (m *mockLinkRepo) CountByOwner(ctx context.Context, ownerID int64, status s
 	return 0, nil
 }
 
+func (m *mockLinkRepo) CreateBatch(ctx context.Context, links []*repository.Link) ([]*repository.Link, error) {
+	for _, l := range links {
+		m.createCalls++
+		if m.createFn != nil {
+			if _, err := m.createFn(ctx, l); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return links, nil
+}
+
 func (m *mockLinkRepo) Create(ctx context.Context, link *repository.Link) (*repository.Link, error) {
 	m.createCalls++
 	return m.createFn(ctx, link)

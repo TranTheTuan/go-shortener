@@ -63,20 +63,31 @@ func (w *BulkJobWorker) process(ctx context.Context, job *repository.BulkJob) er
 		return fmt.Errorf("bulk worker: parse job %d: %w", job.ID, err)
 	}
 
-	// Fill result column for every data row (skip header at index 0).
-	done := 0
+	// Collect URLs from data rows (skip header at index 0).
+	urls := make([]string, len(rows)-1)
 	for i := 1; i < len(rows); i++ {
-		url := ""
 		if len(rows[i]) > 0 {
-			url = rows[i][0]
+			urls[i-1] = rows[i][0]
 		}
-		result := w.shorten(ctx, job.OwnerID, url)
-		if len(rows[i]) < 2 {
-			rows[i] = append(rows[i], result)
+	}
+
+	links, errs := w.links.BatchCreate(ctx, job.OwnerID, urls)
+
+	done := 0
+	for i, link := range links {
+		rowIdx := i + 1
+		var result string
+		if link != nil {
+			result = w.baseURL + "/" + link.ShortCode
+			done++
 		} else {
-			rows[i][1] = result
+			result = w.errorMsg(errs[i])
 		}
-		done++
+		if len(rows[rowIdx]) < 2 {
+			rows[rowIdx] = append(rows[rowIdx], result)
+		} else {
+			rows[rowIdx][1] = result
+		}
 	}
 
 	buf, ct, err := Write(rows, ext)
@@ -94,21 +105,11 @@ func (w *BulkJobWorker) process(ctx context.Context, job *repository.BulkJob) er
 	return w.jobs.UpdateResult(ctx, job.ID, resultKey, done)
 }
 
-func (w *BulkJobWorker) shorten(ctx context.Context, ownerID int64, rawURL string) string {
-	if rawURL == "" {
-		return "url không hợp lệ"
-	}
-	link, _, err := w.links.Create(ctx, service.CreateLinkInput{
-		URL:     rawURL,
-		OwnerID: &ownerID,
-	})
-	if err == nil {
-		return w.baseURL + "/" + link.ShortCode
-	}
+func (w *BulkJobWorker) errorMsg(err error) string {
 	if ae, ok := apperror.As(err); ok && ae.Status == http.StatusBadRequest {
 		return "url không hợp lệ"
 	}
-	slog.Warn("bulk worker: shorten error", "url", rawURL, "error", err)
+	slog.Warn("bulk worker: shorten error", "error", err)
 	return "lỗi xử lý"
 }
 

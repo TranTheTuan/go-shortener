@@ -56,6 +56,11 @@ type LinkService interface {
 	// Create returns the link plus whether it reused an existing one (dedup hit)
 	// rather than creating a new row — the quota layer uses this to refund.
 	Create(ctx context.Context, in CreateLinkInput) (*repository.Link, bool, error)
+	// BatchCreate shortens a slice of URLs for the same owner in a single DB
+	// round-trip where possible. Each result corresponds to the same index in
+	// urls: a non-nil error in the pair means that URL failed. urls that are
+	// invalid, empty, or collision-retried individually map to their error.
+	BatchCreate(ctx context.Context, ownerID int64, urls []string) ([]*repository.Link, []error)
 	Resolve(ctx context.Context, code string) (*repository.Link, error)
 	// ListByOwner returns a page of the user's links (with click counts) and the
 	// total count. status filters the set ("" = all); limit/offset are clamped.
@@ -146,6 +151,95 @@ func (s *linkService) Create(ctx context.Context, in CreateLinkInput) (*reposito
 	}
 
 	return nil, false, apperror.Internal(errors.New("could not generate a unique short code"))
+}
+
+// BatchCreate shortens a slice of URLs for ownerID in as few DB round-trips as
+// possible. Valid URLs are inserted together; short_code collisions are retried
+// individually (same loop as Create). Invalid URLs get a nil link + error.
+func (s *linkService) BatchCreate(ctx context.Context, ownerID int64, urls []string) ([]*repository.Link, []error) {
+	n := len(urls)
+	out := make([]*repository.Link, n)
+	errs := make([]error, n)
+	now := s.now().UTC()
+
+	// Build candidate rows for all valid URLs.
+	type candidate struct {
+		idx  int
+		link *repository.Link
+	}
+	var candidates []candidate
+	for i, raw := range urls {
+		target := strings.TrimSpace(raw)
+		if err := validateURL(target); err != nil {
+			errs[i] = err
+			continue
+		}
+		code, err := shortcode.Generate(s.codeLen)
+		if err != nil {
+			errs[i] = apperror.Internal(fmt.Errorf("linkService.BatchCreate: %w", err))
+			continue
+		}
+		id := int64(ownerID)
+		candidates = append(candidates, candidate{
+			idx: i,
+			link: &repository.Link{
+				ShortCode:   code,
+				OriginalURL: target,
+				UserID:      &id,
+				CreatedAt:   now,
+				IsActive:    true,
+			},
+		})
+	}
+
+	if len(candidates) == 0 {
+		return out, errs
+	}
+
+	// Single batch insert; rows with colliding short_code come back with ID==0.
+	batch := make([]*repository.Link, len(candidates))
+	for i, c := range candidates {
+		batch[i] = c.link
+	}
+	if _, err := s.repo.CreateBatch(ctx, batch); err != nil {
+		for _, c := range candidates {
+			errs[c.idx] = apperror.Internal(fmt.Errorf("linkService.BatchCreate: %w", err))
+		}
+		return out, errs
+	}
+
+	// Harvest successes; fall back to single-Create for collisions (ID==0).
+	for i, c := range candidates {
+		if c.link.ID != 0 {
+			s.cacheSet(ctx, c.link)
+			out[c.idx] = c.link
+			continue
+		}
+		// ponytail: rare collision path — single retry, same as Create
+		for attempt := 0; attempt < maxCodeGenAttempts; attempt++ {
+			code, err := shortcode.Generate(s.codeLen)
+			if err != nil {
+				errs[c.idx] = apperror.Internal(fmt.Errorf("linkService.BatchCreate retry: %w", err))
+				break
+			}
+			batch[i].ShortCode = code
+			created, err := s.repo.Create(ctx, batch[i])
+			if errors.Is(err, repository.ErrConflict) {
+				continue
+			}
+			if err != nil {
+				errs[c.idx] = apperror.Internal(fmt.Errorf("linkService.BatchCreate retry: %w", err))
+				break
+			}
+			s.cacheSet(ctx, created)
+			out[c.idx] = created
+			break
+		}
+		if out[c.idx] == nil && errs[c.idx] == nil {
+			errs[c.idx] = apperror.Internal(errors.New("could not generate a unique short code"))
+		}
+	}
+	return out, errs
 }
 
 // Resolve returns the link for a code using a cache-first strategy.
