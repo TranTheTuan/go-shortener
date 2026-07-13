@@ -234,10 +234,13 @@ function showCreated(shortURL) {
 function wireStatsForm(api) {
   $("stats-form").onsubmit = async (ev) => {
     ev.preventDefault();
-    const code = $("code").value.trim();
-    if (!code) return;
+    const raw = $("code").value.trim();
+    if (!raw) return;
+    // Extract code from full URL: "https://host/Ab3xY7q" → "Ab3xY7q"
+    const code = raw.includes("/") ? raw.split("/").filter(Boolean).pop() : raw;
 
     text("stats-result", "Loading…");
+    $("stats-clicks-table").hidden = true;
     let res, json;
     try {
       res = await api("/api/links/" + encodeURIComponent(code) + "/stats");
@@ -248,7 +251,27 @@ function wireStatsForm(api) {
     }
 
     if (res.ok) {
-      text("stats-result", `Total clicks: ${json.data.total_clicks}`);
+      const d = json.data;
+      text("stats-result", `Total clicks: ${d.total_clicks}`);
+      const clicks = d.recent_clicks ?? [];
+      if (clicks.length) {
+        const body = $("stats-clicks-body");
+        body.textContent = "";
+        for (const c of clicks) {
+          const tr = document.createElement("tr");
+          [
+            new Date(c.clicked_at).toLocaleString(),
+            c.referrer || "—",
+            c.ip_address || "—",
+          ].forEach((v) => {
+            const td = document.createElement("td");
+            td.textContent = v;
+            tr.append(td);
+          });
+          body.append(tr);
+        }
+        $("stats-clicks-table").hidden = false;
+      }
     } else {
       text("stats-result", "Error: " + (json.error?.message || res.status));
     }
