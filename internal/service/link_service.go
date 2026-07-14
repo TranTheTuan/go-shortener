@@ -302,8 +302,6 @@ func (s *linkService) ownedByCode(ctx context.Context, code string, ownerID int6
 	return link, nil
 }
 
-// Delete hard-deletes the owner's link and evicts its cache entry. Returns the
-// deleted link so the caller can drop the matching dedup entry.
 func (s *linkService) Delete(ctx context.Context, code string, ownerID int64) (*repository.Link, error) {
 	link, err := s.ownedByCode(ctx, code, ownerID)
 	if err != nil {

@@ -8,7 +8,13 @@ import { textSummary } from 'https://jslib.k6.io/k6-summary/0.1.0/index.js';
 //   -e CODE=Ab3xY7q
 //   -e CODES="Ab3xY7q,kQ9zL2p,..."
 //   -e CODES_FILE=test/codes.txt        (one code per line)
-const BASE = __ENV.BASE || 'https://go-short.tonytran.xyz';
+//
+// To bypass Cloudflare and hit the cluster directly:
+//   -e NODE_IP=<any-k3s-node-public-ip>
+const NODE_IP = __ENV.NODE_IP || '';
+// When hitting cluster directly (NODE_IP set), Cloudflare is bypassed so TLS
+// terminates at Cloudflare only — use http:// to reach Traefik on port 80.
+const BASE = __ENV.BASE || (NODE_IP ? 'http://go-short.tonytran.xyz' : 'https://go-short.tonytran.xyz');
 
 const codes = (function () {
   if (__ENV.CODES_FILE) {
@@ -22,22 +28,24 @@ if (codes.length === 0) {
 
 // errors tagged by HTTP status + API error code (registered as submetrics below).
 const errors = new Counter('errors');
-const ERROR_TYPES = [
-  ['404', 'NOT_FOUND'],
-  ['410', 'GONE'],       // expired
-  ['410', 'DISABLED'],   // disabled
-  ['500', 'INTERNAL'],
-  ['0', 'NONE'],         // network error / timeout (no response)
-  ['502', 'NONE'],
-  ['503', 'NONE'],
-  ['504', 'NONE'],
-];
+
+const host = BASE.split('//')[1].split('/')[0].split(':')[0];
 
 export const options = {
+  ...(NODE_IP ? {
+    hosts: { [host]: NODE_IP },
+    insecureSkipTLSVerify: true,  // origin cert may not match when bypassing Cloudflare
+  } : {}),
+  thresholds: {
+    // Stress test: only gate on error rate, not latency.
+    // At 12000 iter/s the cluster is overloaded by design — latency will be high.
+    // Use read-latency.js to measure p(95) at sustainable load.
+    http_req_failed: ['rate<0.01'],
+  },
   scenarios: {
     ramp: {
       executor: 'ramping-arrival-rate',
-      startRate: 2000, timeUnit: '1s',
+      startRate: 100, timeUnit: '1s',
       preAllocatedVUs: 200, maxVUs: 2000,
       stages: [
         { target: 2000, duration: '20s' },
@@ -53,7 +61,7 @@ export default function () {
 
   // redirects: 0 → do NOT follow the 302 to the external URL; we test OUR 302,
   // not the destination site (and avoid hammering third parties).
-  const res = http.get(`${BASE}/${encodeURIComponent(code)}`, { redirects: 0 });
+  const res = http.get(`${BASE}/${code}`, { redirects: 0 });
 
   const ok = check(res, {
     'is 302 redirect': (r) => r.status === 302,
