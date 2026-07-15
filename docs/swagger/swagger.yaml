@@ -162,6 +162,11 @@ definitions:
       total:
         type: integer
     type: object
+  internal_handler.portalURLPayload:
+    properties:
+      url:
+        type: string
+    type: object
   internal_handler.subscriptionPayload:
     properties:
       plan: {}
@@ -635,8 +640,15 @@ paths:
   /api/subscription/portal:
     get:
       responses:
-        "302":
-          description: redirect to Paddle Customer Portal
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_handler.portalURLPayload'
+              type: object
         "401":
           description: not authenticated
           schema:
@@ -645,13 +657,13 @@ paths:
           description: no active Paddle subscription
           schema:
             $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
-        "503":
+        "500":
           description: could not generate portal URL
           schema:
             $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
       security:
       - BearerAuth: []
-      summary: Redirect to Paddle Customer Portal
+      summary: Get Paddle Customer Portal URL
       tags:
       - billing
   /auth/me:

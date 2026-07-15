@@ -658,10 +658,25 @@ const docTemplate = `{
                 "tags": [
                     "billing"
                 ],
-                "summary": "Redirect to Paddle Customer Portal",
+                "summary": "Get Paddle Customer Portal URL",
                 "responses": {
-                    "302": {
-                        "description": "redirect to Paddle Customer Portal"
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/internal_handler.portalURLPayload"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
                     },
                     "401": {
                         "description": "not authenticated",
@@ -675,7 +690,7 @@ const docTemplate = `{
                             "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
                         }
                     },
-                    "503": {
+                    "500": {
                         "description": "could not generate portal URL",
                         "schema": {
                             "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
@@ -1123,6 +1138,14 @@ const docTemplate = `{
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_handler.portalURLPayload": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string"
                 }
             }
         },
