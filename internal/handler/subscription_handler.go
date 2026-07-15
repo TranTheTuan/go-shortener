@@ -103,7 +103,7 @@ func (h *SubscriptionHandler) Portal(c echo.Context) error {
 
 	url, err := h.billing.GeneratePortalURL(c.Request().Context(), *sub.PaddleCustomerID)
 	if err != nil {
-		return response.Error(c, apperror.New(http.StatusServiceUnavailable, "PORTAL_UNAVAILABLE", "could not generate portal URL"))
+		return response.Error(c, err)
 	}
 	return c.Redirect(http.StatusFound, url)
 }

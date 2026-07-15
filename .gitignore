@@ -22,4 +22,6 @@
 
 .env
 .claude
+.agent
 CLAUDE.md
+AGENTS.md
