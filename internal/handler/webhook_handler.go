@@ -24,6 +24,15 @@ func NewWebhookHandler(queue chan<- service.PaddleEvent) *WebhookHandler {
 // PaddleWebhook receives a verified Paddle event, parses minimal fields for
 // routing, and enqueues the raw body for the worker goroutine. Returns 503 if
 // the queue is full so Paddle retries rather than silently dropping billing events.
+//
+// @Summary      Receive Paddle webhook event
+// @Tags         billing
+// @Accept       json
+// @Param        X-Paddle-Signature  header  string  true  "Paddle webhook signature"
+// @Success      200  "event accepted"
+// @Failure      400  "invalid payload"
+// @Failure      503  "queue full — Paddle should retry"
+// @Router       /webhooks/paddle [post]
 func (h *WebhookHandler) PaddleWebhook(c echo.Context) error {
 	body, err := io.ReadAll(io.LimitReader(c.Request().Body, 1<<20))
 	if err != nil {

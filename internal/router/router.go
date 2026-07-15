@@ -4,8 +4,6 @@
 package router
 
 import (
-	"fmt"
-
 	paddlesdk "github.com/PaddleHQ/paddle-go-sdk/v5"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -139,7 +137,6 @@ func registerRoutes(e *echo.Echo, h Handlers, deps Deps) {
 		sub.GET("/portal", h.Subscription.Portal)
 	}
 	if h.Webhook != nil && deps.PaddleVerifier != nil {
-		fmt.Println("===========PADDLE HERE=============")
 		e.POST("/webhook/paddle", h.Webhook.PaddleWebhook, appmw.PaddleSignature(deps.PaddleVerifier))
 	}
 

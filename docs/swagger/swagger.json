@@ -565,6 +565,118 @@
                 }
             }
         },
+        "/api/plans": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "billing"
+                ],
+                "summary": "List available plans",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_internal_repository.Plan"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/subscription": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "billing"
+                ],
+                "summary": "Get current subscription and quota",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/internal_handler.subscriptionPayload"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/subscription/portal": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "billing"
+                ],
+                "summary": "Redirect to Paddle Customer Portal",
+                "responses": {
+                    "302": {
+                        "description": "redirect to Paddle Customer Portal"
+                    },
+                    "401": {
+                        "description": "not authenticated",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    },
+                    "404": {
+                        "description": "no active Paddle subscription",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    },
+                    "503": {
+                        "description": "could not generate portal URL",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/me": {
             "get": {
                 "security": [
@@ -687,6 +799,37 @@
                 }
             }
         },
+        "/webhooks/paddle": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "billing"
+                ],
+                "summary": "Receive Paddle webhook event",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Paddle webhook signature",
+                        "name": "X-Paddle-Signature",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "event accepted"
+                    },
+                    "400": {
+                        "description": "invalid payload"
+                    },
+                    "503": {
+                        "description": "queue full — Paddle should retry"
+                    }
+                }
+            }
+        },
         "/{code}": {
             "get": {
                 "description": "Resolves a short code and issues a 302 redirect. Records the click asynchronously.",
@@ -746,6 +889,41 @@
                     "type": "string"
                 },
                 "user_agent": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_TranTheTuan_go-shortener_internal_repository.Plan": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "daily_link_quota": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "paddle_price_id_monthly": {
+                    "type": "string"
+                },
+                "paddle_price_id_yearly": {
+                    "type": "string"
+                },
+                "price_cents": {
+                    "type": "integer"
+                },
+                "updated_at": {
                     "type": "string"
                 }
             }
@@ -939,6 +1117,16 @@
                 "total": {
                     "type": "integer"
                 }
+            }
+        },
+        "internal_handler.subscriptionPayload": {
+            "type": "object",
+            "properties": {
+                "plan": {},
+                "quota_remaining": {
+                    "type": "integer"
+                },
+                "subscription": {}
             }
         },
         "internal_handler.updateLinkRequest": {

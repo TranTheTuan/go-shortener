@@ -15,6 +15,29 @@ definitions:
       user_agent:
         type: string
     type: object
+  github_com_TranTheTuan_go-shortener_internal_repository.Plan:
+    properties:
+      code:
+        type: string
+      created_at:
+        type: string
+      daily_link_quota:
+        type: integer
+      id:
+        type: integer
+      is_active:
+        type: boolean
+      name:
+        type: string
+      paddle_price_id_monthly:
+        type: string
+      paddle_price_id_yearly:
+        type: string
+      price_cents:
+        type: integer
+      updated_at:
+        type: string
+    type: object
   github_com_TranTheTuan_go-shortener_internal_repository.User:
     properties:
       created_at:
@@ -138,6 +161,13 @@ definitions:
         type: integer
       total:
         type: integer
+    type: object
+  internal_handler.subscriptionPayload:
+    properties:
+      plan: {}
+      quota_remaining:
+        type: integer
+      subscription: {}
     type: object
   internal_handler.updateLinkRequest:
     properties:
@@ -557,6 +587,73 @@ paths:
       summary: Get click statistics
       tags:
       - links
+  /api/plans:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_TranTheTuan_go-shortener_internal_repository.Plan'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      summary: List available plans
+      tags:
+      - billing
+  /api/subscription:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_handler.subscriptionPayload'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Get current subscription and quota
+      tags:
+      - billing
+  /api/subscription/portal:
+    get:
+      responses:
+        "302":
+          description: redirect to Paddle Customer Portal
+        "401":
+          description: not authenticated
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "404":
+          description: no active Paddle subscription
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "503":
+          description: could not generate portal URL
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Redirect to Paddle Customer Portal
+      tags:
+      - billing
   /auth/me:
     get:
       produces:
@@ -632,6 +729,26 @@ paths:
       summary: Get a user by ID
       tags:
       - users
+  /webhooks/paddle:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Paddle webhook signature
+        in: header
+        name: X-Paddle-Signature
+        required: true
+        type: string
+      responses:
+        "200":
+          description: event accepted
+        "400":
+          description: invalid payload
+        "503":
+          description: queue full — Paddle should retry
+      summary: Receive Paddle webhook event
+      tags:
+      - billing
 securityDefinitions:
   BearerAuth:
     description: 'Keycloak access token. Format: "Bearer {token}".'
