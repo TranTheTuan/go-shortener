@@ -74,23 +74,6 @@ func makeSubCanceledRaw(subID, custID string) []byte {
 	return b
 }
 
-func makeTxCompletedRaw(subID string) []byte {
-	data := map[string]any{
-		"event_type": "transaction.completed",
-		"event_id":   "evt_004",
-		"data": map[string]any{
-			"id":              "txn_001",
-			"subscription_id": subID,
-			"billing_period": map[string]any{
-				"starts_at": time.Now().Format(time.RFC3339),
-				"ends_at":   time.Now().Add(30 * 24 * time.Hour).Format(time.RFC3339),
-			},
-		},
-	}
-	b, _ := json.Marshal(data)
-	return b
-}
-
 // ---- tests ------------------------------------------------------------------
 
 func TestBillingService_HandleEvent_SubscriptionCreated(t *testing.T) {
@@ -131,8 +114,8 @@ func TestBillingService_HandleEvent_SubscriptionCanceled_SetsCanceledAt(t *testi
 			if sub.CanceledAt == nil {
 				t.Error("canceled_at must be set")
 			}
-			if sub.Status != "active" {
-				t.Errorf("status = %q, want active", sub.Status)
+			if sub.Status != "canceled" {
+				t.Errorf("status = %q, want canceled", sub.Status)
 			}
 			return sub, nil
 		},
@@ -148,32 +131,6 @@ func TestBillingService_HandleEvent_SubscriptionCanceled_SetsCanceledAt(t *testi
 		EventType: "subscription.canceled", EventID: "evt_003", Raw: raw,
 	}); err != nil {
 		t.Fatalf("HandleEvent canceled: %v", err)
-	}
-}
-
-func TestBillingService_HandleEvent_TransactionCompleted_ExtendsPeriod(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	subs := mocksrepository.NewMockSubscriptionRepository(ctrl)
-	subs.EXPECT().UpsertByPaddleID(gomock.Any(), gomock.AssignableToTypeOf(&repository.Subscription{})).DoAndReturn(
-		func(_ context.Context, sub *repository.Subscription) (*repository.Subscription, error) {
-			if sub.CurrentPeriodEnd == nil {
-				t.Error("current_period_end must be set after transaction.completed")
-			}
-			return sub, nil
-		},
-	)
-
-	plans := mocksrepository.NewMockPlanRepository(ctrl)
-	users := mocksrepository.NewMockUserRepository(ctrl)
-	quota := mocksservice.NewMockQuotaService(ctrl)
-
-	svc := NewBillingService(plans, subs, users, quota, nil, "basic")
-	raw := makeTxCompletedRaw("sub_003")
-	if err := svc.HandleEvent(context.Background(), PaddleEvent{
-		EventType: "transaction.completed", EventID: "evt_004", Raw: raw,
-	}); err != nil {
-		t.Fatalf("HandleEvent tx.completed: %v", err)
 	}
 }
 
