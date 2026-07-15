@@ -635,7 +635,7 @@ function wireBilling(api, paddleClientToken) {
       const btn = document.createElement("button");
       btn.textContent = "Manage subscription →";
       btn.className = "portal-btn";
-      btn.onclick = () => { window.location.href = "/api/subscription/portal"; };
+      btn.onclick = () => { api("/api/subscription/portal"); };
       card.append(btn);
     }
   }

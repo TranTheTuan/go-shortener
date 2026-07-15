@@ -1,0 +1,12 @@
+#!/bin/sh
+# Runs lint + tests before every push. To skip in an emergency: git push --no-verify
+
+set -e
+
+echo "▶ lint..."
+make lint
+
+echo "▶ test..."
+make test
+
+echo "✓ all checks passed"
