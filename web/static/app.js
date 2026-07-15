@@ -635,7 +635,24 @@ function wireBilling(api, paddleClientToken) {
       const btn = document.createElement("button");
       btn.textContent = "Manage subscription →";
       btn.className = "portal-btn";
-      btn.onclick = () => { api("/api/subscription/portal"); };
+      btn.onclick = async () => {
+        btn.disabled = true;
+        btn.textContent = "Opening portal…";
+        try {
+          const res = await api("/api/subscription/portal");
+          const json = await res.json().catch(() => ({}));
+          if (res.ok && json.data?.url) {
+            window.open(json.data.url, "_blank", "noopener");
+          } else {
+            alert("Could not open portal: " + (json.error?.message || res.status));
+          }
+        } catch {
+          alert("Network error — please retry.");
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Manage subscription →";
+        }
+      };
       card.append(btn);
     }
   }

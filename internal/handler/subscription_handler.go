@@ -76,16 +76,25 @@ func (h *SubscriptionHandler) Get(c echo.Context) error {
 	})
 }
 
+// portalURLPayload is the response body for GET /api/subscription/portal.
+type portalURLPayload struct {
+	URL string `json:"url"`
+}
+
 // Portal handles GET /api/subscription/portal.
-// Generates a Paddle Customer Portal URL and redirects the user.
+// Returns the Paddle Customer Portal URL as JSON so the frontend can navigate
+// directly (window.open / window.location.href). A server-side redirect is not
+// used because fetch() cannot follow cross-origin redirects to the Paddle portal
+// domain — the browser blocks the response due to missing CORS headers on the
+// Paddle side.
 //
-// @Summary      Redirect to Paddle Customer Portal
+// @Summary      Get Paddle Customer Portal URL
 // @Tags         billing
 // @Security     BearerAuth
-// @Success      302  "redirect to Paddle Customer Portal"
+// @Success      200  {object}  response.Envelope{data=handler.portalURLPayload}
 // @Failure      401  {object}  response.Envelope  "not authenticated"
 // @Failure      404  {object}  response.Envelope  "no active Paddle subscription"
-// @Failure      503  {object}  response.Envelope  "could not generate portal URL"
+// @Failure      500  {object}  response.Envelope  "could not generate portal URL"
 // @Router       /api/subscription/portal [get]
 func (h *SubscriptionHandler) Portal(c echo.Context) error {
 	userID, ok := appmw.UserIDFrom(c)
@@ -105,5 +114,5 @@ func (h *SubscriptionHandler) Portal(c echo.Context) error {
 	if err != nil {
 		return response.Error(c, err)
 	}
-	return c.Redirect(http.StatusFound, url)
+	return response.Success(c, http.StatusOK, portalURLPayload{URL: url})
 }
