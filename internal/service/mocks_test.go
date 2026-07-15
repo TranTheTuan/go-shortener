@@ -207,6 +207,14 @@ func (m *mockUserRepo) Update(_ context.Context, user *repository.User) (*reposi
 	return user, nil
 }
 
+func (m *mockUserRepo) UpdatePaddleCustomerID(_ context.Context, userID int64, customerID string) error {
+	if u, ok := m.users[userID]; ok {
+		// just a no-op stub; tests that need it can check via GetByID
+		_ = u
+	}
+	return nil
+}
+
 func (m *mockUserRepo) List(_ context.Context) ([]*repository.User, error) {
 	out := make([]*repository.User, 0, len(m.users))
 	for _, u := range m.users {
@@ -216,6 +224,7 @@ func (m *mockUserRepo) List(_ context.Context) ([]*repository.User, error) {
 }
 
 // mockPlanRepo is a configurable test double for repository.PlanRepository.
+// Used by user_service_test.go for plan provisioning checks.
 type mockPlanRepo struct {
 	byCode map[string]*repository.Plan
 	byID   map[int64]*repository.Plan
@@ -235,24 +244,16 @@ func (m *mockPlanRepo) GetByID(_ context.Context, id int64) (*repository.Plan, e
 	return nil, repository.ErrNotFound
 }
 
-// mockSubRepo is a configurable test double for repository.SubscriptionRepository.
-type mockSubRepo struct {
-	active map[int64]*repository.Subscription
-}
-
-func (m *mockSubRepo) Create(_ context.Context, sub *repository.Subscription) (*repository.Subscription, error) {
-	if m.active == nil {
-		m.active = make(map[int64]*repository.Subscription)
-	}
-	m.active[sub.UserID] = sub
-	return sub, nil
-}
-
-func (m *mockSubRepo) GetActiveByUserID(_ context.Context, userID int64) (*repository.Subscription, error) {
-	if s, ok := m.active[userID]; ok {
-		return s, nil
-	}
+func (m *mockPlanRepo) GetByPaddlePriceID(_ context.Context, _ string) (*repository.Plan, error) {
 	return nil, repository.ErrNotFound
+}
+
+func (m *mockPlanRepo) List(_ context.Context) ([]*repository.Plan, error) {
+	plans := make([]*repository.Plan, 0, len(m.byCode))
+	for _, p := range m.byCode {
+		plans = append(plans, p)
+	}
+	return plans, nil
 }
 
 // mockClickRepo is a configurable test double for repository.ClickRepository.

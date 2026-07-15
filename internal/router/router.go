@@ -4,6 +4,9 @@
 package router
 
 import (
+	"fmt"
+
+	paddlesdk "github.com/PaddleHQ/paddle-go-sdk/v5"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	echoSwagger "github.com/swaggo/echo-swagger"
@@ -19,21 +22,24 @@ import (
 
 // Deps groups cross-cutting dependencies the router needs to build middleware.
 type Deps struct {
-	Verifier keycloak.TokenVerifier
-	Users    service.UserService
-	Dedup    *service.DedupCache
-	Quota    service.QuotaService
+	Verifier       keycloak.TokenVerifier
+	Users          service.UserService
+	Dedup          *service.DedupCache
+	Quota          service.QuotaService
+	PaddleVerifier *paddlesdk.WebhookVerifier // nil when Paddle is disabled
 }
 
 // Handlers groups the application's HTTP handlers for registration.
 type Handlers struct {
-	Health   *handler.HealthHandler
-	User     *handler.UserHandler
-	Link     *handler.LinkHandler
-	Redirect *handler.RedirectHandler
-	Auth     *handler.AuthHandler
-	Frontend *handler.FrontendHandler
-	BulkJob  *handler.BulkJobHandler // nil when R2 is not configured
+	Health       *handler.HealthHandler
+	User         *handler.UserHandler
+	Link         *handler.LinkHandler
+	Redirect     *handler.RedirectHandler
+	Auth         *handler.AuthHandler
+	Frontend     *handler.FrontendHandler
+	BulkJob      *handler.BulkJobHandler      // nil when R2 is not configured
+	Webhook      *handler.WebhookHandler      // nil when Paddle is disabled
+	Subscription *handler.SubscriptionHandler // nil when Paddle is disabled
 }
 
 // New builds a configured Echo instance with middleware and all routes. Deps
@@ -122,6 +128,19 @@ func registerRoutes(e *echo.Echo, h Handlers, deps Deps) {
 		bulk.GET("", h.BulkJob.ListJobs)
 		bulk.GET("/:id", h.BulkJob.GetJob)
 		bulk.GET("/:id/download-url", h.BulkJob.GetResultURL)
+	}
+
+	// Billing/subscription — only registered when Paddle is enabled.
+	if h.Subscription != nil {
+		// Public plan catalog (no auth — price IDs needed before checkout).
+		e.GET("/api/plans", h.Subscription.Plans)
+		sub := api.Group("/subscription")
+		sub.GET("", h.Subscription.Get)
+		sub.GET("/portal", h.Subscription.Portal)
+	}
+	if h.Webhook != nil && deps.PaddleVerifier != nil {
+		fmt.Println("===========PADDLE HERE=============")
+		e.POST("/webhook/paddle", h.Webhook.PaddleWebhook, appmw.PaddleSignature(deps.PaddleVerifier))
 	}
 
 	// Public redirect. Registered last; Echo prioritizes the static /healthz,

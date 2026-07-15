@@ -24,9 +24,20 @@ type Config struct {
 	Kafka     KafkaConfig     `envPrefix:"KAFKA_"`
 	R2        R2Config        `envPrefix:"R2_"`
 	Tracing   TracingConfig   `envPrefix:"TRACING_"`
+	Paddle    PaddleConfig    `envPrefix:"PADDLE_"`
 	// ServiceVersion tags traces/metrics with the running build (git sha),
 	// injected at deploy. Defaults to "dev" for local runs.
 	ServiceVersion string `env:"SERVICE_VERSION" envDefault:"dev"`
+}
+
+// PaddleConfig holds Paddle Billing settings.
+// Set PADDLE_ENABLED=true and provide credentials to activate billing features.
+type PaddleConfig struct {
+	Enabled       bool   `env:"ENABLED" envDefault:"false"`
+	WebhookSecret string `env:"WEBHOOK_SECRET"` // pdl_ntf_...
+	APIKey        string `env:"API_KEY"`        // server-side API key for portal sessions
+	ClientToken   string `env:"CLIENT_TOKEN"`   // client-side token for Paddle.js
+	BaseURL       string `env:"BASE_URL" envDefault:"https://vendors.paddle.com/api/2.0"`
 }
 
 // TracingConfig holds OpenTelemetry trace-export settings. Disabled by default

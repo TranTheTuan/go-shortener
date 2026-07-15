@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	paddlesdk "github.com/PaddleHQ/paddle-go-sdk/v5"
 	"github.com/redis/go-redis/extra/redisotel/v9"
 
 	"github.com/TranTheTuan/go-shortener/configs"
@@ -19,9 +20,11 @@ import (
 	"github.com/TranTheTuan/go-shortener/internal/repository"
 	"github.com/TranTheTuan/go-shortener/internal/router"
 	"github.com/TranTheTuan/go-shortener/internal/service"
+	"github.com/TranTheTuan/go-shortener/internal/worker"
 	"github.com/TranTheTuan/go-shortener/pkg/database"
 	"github.com/TranTheTuan/go-shortener/pkg/keycloak"
 	"github.com/TranTheTuan/go-shortener/pkg/metrics"
+	paddlepkg "github.com/TranTheTuan/go-shortener/pkg/paddle"
 	"github.com/TranTheTuan/go-shortener/pkg/redisbreaker"
 	"github.com/TranTheTuan/go-shortener/pkg/storage"
 )
@@ -148,7 +151,7 @@ func runServer() error {
 			return fmt.Errorf("r2 client: %w", err)
 		}
 		bulkRepo = repository.NewBulkJobRepository(db)
-		bulkSvc := service.NewBulkJobService(bulkRepo, r2, cfg.Shortener.BaseURL)
+		bulkSvc := service.NewBulkJobService(bulkRepo, r2, cfg.Shortener.BaseURL, quotaSvc)
 		bulkHandler = handler.NewBulkJobHandler(bulkSvc)
 		if cfg.Kafka.Enabled() {
 			bp, err := events.NewBulkJobProducer(cfg.Kafka)
@@ -162,19 +165,40 @@ func runServer() error {
 		slog.Warn("R2 not configured; bulk-upload endpoints disabled")
 	}
 
+	// Paddle billing — only wired when PADDLE_ENABLED=true.
+	var webhookHandler *handler.WebhookHandler
+	var subscriptionHandler *handler.SubscriptionHandler
+	var paddleVerifier *paddlesdk.WebhookVerifier
+	var webhookQueue chan service.PaddleEvent
+	var billingSvc service.BillingService
+	if cfg.Paddle.Enabled {
+		paddleVerifier = paddlepkg.NewVerifier(cfg.Paddle.WebhookSecret)
+		paddleSDK, err := paddlepkg.NewClient(cfg.Paddle.APIKey, cfg.Paddle.BaseURL)
+		if err != nil {
+			return fmt.Errorf("paddle SDK: %w", err)
+		}
+		webhookQueue = make(chan service.PaddleEvent, 100)
+		billingSvc = service.NewBillingService(planRepo, subRepo, userRepo, quotaSvc, paddleSDK, cfg.Quota.DefaultPlanCode)
+		webhookHandler = handler.NewWebhookHandler(webhookQueue)
+		subscriptionHandler = handler.NewSubscriptionHandler(billingSvc, quotaSvc, planRepo)
+	}
+
 	e := router.New(router.Handlers{
-		Health:   handler.NewHealthHandler(),
-		User:     handler.NewUserHandler(userSvc),
-		Link:     handler.NewLinkHandler(linkSvc, analyticsSvc, dedupCache, cfg.Shortener.BaseURL),
-		Redirect: handler.NewRedirectHandler(linkSvc, producer),
-		Auth:     handler.NewAuthHandler(userSvc),
-		Frontend: handler.NewFrontendHandler(cfg.Keycloak.Issuer, cfg.Keycloak.ClientID),
-		BulkJob:  bulkHandler,
+		Health:       handler.NewHealthHandler(),
+		User:         handler.NewUserHandler(userSvc),
+		Link:         handler.NewLinkHandler(linkSvc, analyticsSvc, dedupCache, cfg.Shortener.BaseURL),
+		Redirect:     handler.NewRedirectHandler(linkSvc, producer),
+		Auth:         handler.NewAuthHandler(userSvc),
+		Frontend:     handler.NewFrontendHandler(cfg.Keycloak.Issuer, cfg.Keycloak.ClientID, cfg.Paddle.ClientToken),
+		BulkJob:      bulkHandler,
+		Webhook:      webhookHandler,
+		Subscription: subscriptionHandler,
 	}, router.Deps{
-		Verifier: verifier,
-		Users:    userSvc,
-		Dedup:    dedupCache,
-		Quota:    quotaSvc,
+		Verifier:       verifier,
+		Users:          userSvc,
+		Dedup:          dedupCache,
+		Quota:          quotaSvc,
+		PaddleVerifier: paddleVerifier,
 	})
 	e.Server.ReadTimeout = cfg.Server.ReadTimeout
 	e.Server.WriteTimeout = cfg.Server.WriteTimeout
@@ -186,6 +210,9 @@ func runServer() error {
 
 	if bulkProducer != nil {
 		go outboxRelay(ctx, bulkRepo, bulkProducer, 5*time.Second)
+	}
+	if webhookQueue != nil {
+		go worker.RunWebhookWorker(ctx, webhookQueue, billingSvc)
 	}
 
 	// Run the server in the background.

@@ -27,7 +27,7 @@ func TestParseIssuer(t *testing.T) {
 
 func TestFrontendHandler_Config(t *testing.T) {
 	e := echo.New()
-	h := NewFrontendHandler("http://auth.cd.me/realms/nine-realms", "go-shortener")
+	h := NewFrontendHandler("http://auth.cd.me/realms/nine-realms", "go-shortener", "")
 
 	req := httptest.NewRequest(http.MethodGet, "/app-config.json", nil)
 	rec := httptest.NewRecorder()
@@ -48,7 +48,7 @@ func TestFrontendHandler_Config(t *testing.T) {
 // the /:code redirect catch-all (a real short code still reaches the catch-all).
 func TestFrontendRouting(t *testing.T) {
 	e := echo.New()
-	h := NewFrontendHandler("http://auth.cd.me/realms/nine-realms", "go-shortener")
+	h := NewFrontendHandler("http://auth.cd.me/realms/nine-realms", "go-shortener", "")
 	e.FileFS("/", "index.html", web.Files)
 	e.StaticFS("/static", echo.MustSubFS(web.Files, "static"))
 	e.GET("/app-config.json", h.Config)

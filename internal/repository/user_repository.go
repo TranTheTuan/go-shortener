@@ -44,6 +44,8 @@ type UserRepository interface {
 	GetByUsername(ctx context.Context, username string) (*User, error)
 	GetByKeycloakSub(ctx context.Context, sub string) (*User, error)
 	Update(ctx context.Context, user *User) (*User, error)
+	// UpdatePaddleCustomerID sets the paddle_customer_id on a user row.
+	UpdatePaddleCustomerID(ctx context.Context, userID int64, customerID string) error
 	List(ctx context.Context) ([]*User, error)
 }
 
@@ -146,6 +148,14 @@ func (r *userRepository) Update(ctx context.Context, user *User) (*User, error) 
 		return nil, err
 	}
 	return user, nil
+}
+
+// UpdatePaddleCustomerID sets the paddle_customer_id column for the given user.
+func (r *userRepository) UpdatePaddleCustomerID(ctx context.Context, userID int64, customerID string) error {
+	return r.db.WithContext(ctx).
+		Model(&User{}).
+		Where("id = ?", userID).
+		Update("paddle_customer_id", customerID).Error
 }
 
 // List returns all users ordered by ID.

@@ -105,9 +105,17 @@ func (m *mockStorage) Upload(_ context.Context, key string, r io.Reader, _ int64
 
 // --- tests ---
 
+// mockQuotaService is a test double for service.QuotaService that always passes.
+type mockQuotaService struct{}
+
+func (m *mockQuotaService) Allow(_ context.Context, _ int64) (bool, error) { return true, nil }
+func (m *mockQuotaService) Release(_ context.Context, _ int64)              {}
+func (m *mockQuotaService) Reset(_ context.Context, _ int64)                {}
+func (m *mockQuotaService) Remaining(_ context.Context, _ int64) int        { return 9999 }
+
 func TestProcess_SkipsNonPending(t *testing.T) {
 	repo := &mockBulkRepo{job: &repository.BulkJob{ID: 1, Status: repository.BulkJobStatusCompleted}}
-	w := NewBulkJobWorker(repo, &mockLinkService{shortURL: "http://short/abc"}, &mockStorage{}, "http://short")
+	w := NewBulkJobWorker(repo, &mockLinkService{shortURL: "http://short/abc"}, &mockQuotaService{}, &mockStorage{}, "http://short")
 	if err := w.Process(context.Background(), 1); err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +132,7 @@ func TestProcess_CSVRoundTrip(t *testing.T) {
 		Status: repository.BulkJobStatusPending, TotalRows: 2,
 	}}
 	links := &mockLinkService{shortURL: "http://short/abc"}
-	w := NewBulkJobWorker(repo, links, stor, "http://short")
+	w := NewBulkJobWorker(repo, links, &mockQuotaService{}, stor, "http://short")
 
 	if err := w.Process(context.Background(), 2); err != nil {
 		t.Fatal(err)
@@ -150,7 +158,7 @@ func TestProcess_InvalidURL(t *testing.T) {
 		Status: repository.BulkJobStatusPending, TotalRows: 1,
 	}}
 	links := &mockLinkService{} // returns bad-request error
-	w := NewBulkJobWorker(repo, links, stor, "http://short")
+	w := NewBulkJobWorker(repo, links, &mockQuotaService{}, stor, "http://short")
 
 	if err := w.Process(context.Background(), 3); err != nil {
 		t.Fatal(err)

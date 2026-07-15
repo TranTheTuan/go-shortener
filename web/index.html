@@ -41,6 +41,8 @@
         <button class="nav-item" type="button" data-view="stats">Stats</button>
         <!-- Revealed by bulk.js only when the backend exposes /api/bulk-jobs. -->
         <button class="nav-item" type="button" data-view="bulk" id="bulk-nav" hidden>Bulk upload</button>
+        <!-- Revealed by app.js only when Paddle is configured (paddleClientToken present). -->
+        <button class="nav-item" type="button" data-view="billing" id="billing-nav" hidden>Billing</button>
       </nav>
       <div class="sidebar-foot">
         <div class="menu" id="settings-menu">
@@ -164,6 +166,15 @@
               </thead>
               <tbody id="bulk-jobs-body"></tbody>
             </table>
+          </div>
+        </section>
+
+        <!-- Billing -->
+        <section class="view" data-view="billing" hidden>
+          <p id="billing-loading" class="muted">Loading plan…</p>
+          <div id="billing-content" hidden>
+            <div id="current-plan-card" class="plan-card panel"></div>
+            <div id="plan-grid" class="plan-grid"></div>
           </div>
         </section>
       </div>
