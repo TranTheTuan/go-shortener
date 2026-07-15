@@ -11,16 +11,16 @@ import (
 // Plan is a subscription plan in the catalog. The matching SQL (and the seeded
 // "basic" plan) lives in migrations/000007_create_plans_table.up.sql.
 type Plan struct {
-	ID                    int64     `gorm:"primaryKey" json:"id"`
-	Code                  string    `gorm:"size:50;uniqueIndex;not null" json:"code"`
-	Name                  string    `gorm:"size:255;not null" json:"name"`
-	DailyLinkQuota        int       `gorm:"not null" json:"daily_link_quota"`
-	PriceCents            int       `gorm:"not null;default:0" json:"price_cents"`
-	IsActive              bool      `gorm:"not null;default:true" json:"is_active"`
-	PaddlePriceIDMonthly  *string   `gorm:"size:255" json:"paddle_price_id_monthly,omitempty"`
-	PaddlePriceIDYearly   *string   `gorm:"size:255" json:"paddle_price_id_yearly,omitempty"`
-	CreatedAt             time.Time `json:"created_at"`
-	UpdatedAt             time.Time `json:"updated_at"`
+	ID                   int64     `gorm:"primaryKey" json:"id"`
+	Code                 string    `gorm:"size:50;uniqueIndex;not null" json:"code"`
+	Name                 string    `gorm:"size:255;not null" json:"name"`
+	DailyLinkQuota       int       `gorm:"not null" json:"daily_link_quota"`
+	PriceCents           int       `gorm:"not null;default:0" json:"price_cents"`
+	IsActive             bool      `gorm:"not null;default:true" json:"is_active"`
+	PaddlePriceIDMonthly *string   `gorm:"size:255" json:"paddle_price_id_monthly,omitempty"`
+	PaddlePriceIDYearly  *string   `gorm:"size:255" json:"paddle_price_id_yearly,omitempty"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
 }
 
 // PlanRepository defines the persistence operations for plans.

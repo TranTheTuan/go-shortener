@@ -11,9 +11,9 @@ import (
 // values are derived from the backend's Keycloak settings so the frontend and
 // backend can never drift, and changing realm/client needs no rebuild.
 type FrontendHandler struct {
-	authURL          string
-	realm            string
-	clientID         string
+	authURL           string
+	realm             string
+	clientID          string
 	paddleClientToken string
 }
 

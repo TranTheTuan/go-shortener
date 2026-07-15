@@ -10,9 +10,9 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/TranTheTuan/go-shortener/internal/repository"
+	mocksrepository "github.com/TranTheTuan/go-shortener/internal/service/mocks/repository"
 	"github.com/TranTheTuan/go-shortener/pkg/database"
 	"github.com/TranTheTuan/go-shortener/pkg/redisbreaker"
-	mocksrepository "github.com/TranTheTuan/go-shortener/internal/service/mocks/repository"
 )
 
 var quotaNow = time.Date(2026, 6, 26, 9, 0, 0, 0, time.UTC)

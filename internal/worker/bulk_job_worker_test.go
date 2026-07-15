@@ -109,9 +109,9 @@ func (m *mockStorage) Upload(_ context.Context, key string, r io.Reader, _ int64
 type mockQuotaService struct{}
 
 func (m *mockQuotaService) Allow(_ context.Context, _ int64) (bool, error) { return true, nil }
-func (m *mockQuotaService) Release(_ context.Context, _ int64)              {}
-func (m *mockQuotaService) Reset(_ context.Context, _ int64)                {}
-func (m *mockQuotaService) Remaining(_ context.Context, _ int64) int        { return 9999 }
+func (m *mockQuotaService) Release(_ context.Context, _ int64)             {}
+func (m *mockQuotaService) Reset(_ context.Context, _ int64)               {}
+func (m *mockQuotaService) Remaining(_ context.Context, _ int64) int       { return 9999 }
 
 func TestProcess_SkipsNonPending(t *testing.T) {
 	repo := &mockBulkRepo{job: &repository.BulkJob{ID: 1, Status: repository.BulkJobStatusCompleted}}
