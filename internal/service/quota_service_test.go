@@ -7,16 +7,23 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/mock/gomock"
 
 	"github.com/TranTheTuan/go-shortener/internal/repository"
+	mocksrepository "github.com/TranTheTuan/go-shortener/internal/service/mocks/repository"
 	"github.com/TranTheTuan/go-shortener/pkg/database"
 	"github.com/TranTheTuan/go-shortener/pkg/redisbreaker"
 )
 
 var quotaNow = time.Date(2026, 6, 26, 9, 0, 0, 0, time.UTC)
 
-// newQuotaSvc builds a quotaService backed by a fresh miniredis + mock repos.
-func newQuotaSvc(t *testing.T) (*quotaService, *miniredis.Miniredis, *mockSubRepo) {
+var (
+	basicPlan = &repository.Plan{ID: 1, Code: "basic", DailyLinkQuota: 10}
+	proPlan   = &repository.Plan{ID: 2, Code: "pro", DailyLinkQuota: 100}
+)
+
+// newQuotaSvc builds a quotaService backed by a fresh miniredis + gomock repos.
+func newQuotaSvc(t *testing.T, ctrl *gomock.Controller) (*quotaService, *miniredis.Miniredis, *mocksrepository.MockPlanRepository, *mocksrepository.MockSubscriptionRepository) {
 	t.Helper()
 	mr, err := miniredis.Run()
 	if err != nil {
@@ -25,11 +32,8 @@ func newQuotaSvc(t *testing.T) (*quotaService, *miniredis.Miniredis, *mockSubRep
 	t.Cleanup(mr.Close)
 
 	rdb := &database.RedisClient{Client: redis.NewClient(&redis.Options{Addr: mr.Addr()})}
-	plans := &mockPlanRepo{
-		byCode: map[string]*repository.Plan{"basic": {ID: 1, Code: "basic", DailyLinkQuota: 10}},
-		byID:   map[int64]*repository.Plan{1: {ID: 1, Code: "basic", DailyLinkQuota: 10}, 2: {ID: 2, Code: "pro", DailyLinkQuota: 100}},
-	}
-	subs := &mockSubRepo{active: map[int64]*repository.Subscription{}}
+	plans := mocksrepository.NewMockPlanRepository(ctrl)
+	subs := mocksrepository.NewMockSubscriptionRepository(ctrl)
 
 	svc := &quotaService{
 		rdb: rdb, breaker: redisbreaker.New(10, time.Minute),
@@ -37,27 +41,43 @@ func newQuotaSvc(t *testing.T) (*quotaService, *miniredis.Miniredis, *mockSubRep
 		defaultPlanCode: "basic", fallbackLimit: 10,
 		now: func() time.Time { return quotaNow },
 	}
-	return svc, mr, subs
+	return svc, mr, plans, subs
 }
 
 func TestQuota_DailyLimit_DefaultsToBasic(t *testing.T) {
-	svc, _, _ := newQuotaSvc(t)
+	ctrl := gomock.NewController(t)
+	svc, _, plans, subs := newQuotaSvc(t, ctrl)
+
+	subs.EXPECT().GetActiveByUserID(gomock.Any(), int64(1)).Return(nil, repository.ErrNotFound)
+	plans.EXPECT().GetByCode(gomock.Any(), "basic").Return(basicPlan, nil)
+
 	if got := svc.DailyLimit(context.Background(), 1); got != 10 {
 		t.Errorf("DailyLimit = %d, want 10 (basic fallback)", got)
 	}
 }
 
 func TestQuota_DailyLimit_ActiveSubscription(t *testing.T) {
-	svc, _, subs := newQuotaSvc(t)
-	subs.active[1] = &repository.Subscription{UserID: 1, PlanID: 2, Status: "active"} // pro
+	ctrl := gomock.NewController(t)
+	svc, _, plans, subs := newQuotaSvc(t, ctrl)
+
+	sub := &repository.Subscription{UserID: 1, PlanID: 2, Status: "active"}
+	subs.EXPECT().GetActiveByUserID(gomock.Any(), int64(1)).Return(sub, nil)
+	plans.EXPECT().GetByID(gomock.Any(), int64(2)).Return(proPlan, nil)
+
 	if got := svc.DailyLimit(context.Background(), 1); got != 100 {
 		t.Errorf("DailyLimit = %d, want 100 (pro plan)", got)
 	}
 }
 
 func TestQuota_Allow_UnderThenOverLimit(t *testing.T) {
-	svc, _, subs := newQuotaSvc(t)
-	subs.active[1] = &repository.Subscription{UserID: 1, PlanID: 0, Status: "active"} // plan 0 missing → basic (10)
+	ctrl := gomock.NewController(t)
+	svc, _, plans, subs := newQuotaSvc(t, ctrl)
+
+	// plan 0 not found → falls back to basic (10)
+	sub := &repository.Subscription{UserID: 1, PlanID: 0, Status: "active"}
+	subs.EXPECT().GetActiveByUserID(gomock.Any(), int64(1)).Return(sub, nil).AnyTimes()
+	plans.EXPECT().GetByID(gomock.Any(), int64(0)).Return(nil, repository.ErrNotFound).AnyTimes()
+	plans.EXPECT().GetByCode(gomock.Any(), "basic").Return(basicPlan, nil).AnyTimes()
 
 	ctx := context.Background()
 	for i := 1; i <= 10; i++ {
@@ -77,7 +97,12 @@ func TestQuota_Allow_UnderThenOverLimit(t *testing.T) {
 }
 
 func TestQuota_Release_Decrements(t *testing.T) {
-	svc, _, _ := newQuotaSvc(t)
+	ctrl := gomock.NewController(t)
+	svc, _, plans, subs := newQuotaSvc(t, ctrl)
+
+	subs.EXPECT().GetActiveByUserID(gomock.Any(), int64(1)).Return(nil, repository.ErrNotFound).AnyTimes()
+	plans.EXPECT().GetByCode(gomock.Any(), "basic").Return(basicPlan, nil).AnyTimes()
+
 	ctx := context.Background()
 	_, _ = svc.Allow(ctx, 1)
 	_, _ = svc.Allow(ctx, 1) // counter = 2
@@ -88,7 +113,12 @@ func TestQuota_Release_Decrements(t *testing.T) {
 }
 
 func TestQuota_Allow_FailsOpenWhenRedisDown(t *testing.T) {
-	svc, mr, _ := newQuotaSvc(t)
+	ctrl := gomock.NewController(t)
+	svc, mr, plans, subs := newQuotaSvc(t, ctrl)
+
+	subs.EXPECT().GetActiveByUserID(gomock.Any(), int64(1)).Return(nil, repository.ErrNotFound)
+	plans.EXPECT().GetByCode(gomock.Any(), "basic").Return(basicPlan, nil)
+
 	mr.Close() // simulate Redis outage
 
 	allowed, err := svc.Allow(context.Background(), 1)

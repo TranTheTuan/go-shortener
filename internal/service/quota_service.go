@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -12,6 +14,15 @@ import (
 	"github.com/TranTheTuan/go-shortener/pkg/database"
 	"github.com/TranTheTuan/go-shortener/pkg/redisbreaker"
 )
+
+// UnlimitedQuota is a no-op QuotaService that always allows and reports MaxInt remaining.
+// Used in process roles (e.g. bulk-worker binary) that have no Redis dependency.
+type UnlimitedQuota struct{}
+
+func (UnlimitedQuota) Allow(_ context.Context, _ int64) (bool, error) { return true, nil }
+func (UnlimitedQuota) Release(_ context.Context, _ int64)             {}
+func (UnlimitedQuota) Reset(_ context.Context, _ int64)               {}
+func (UnlimitedQuota) Remaining(_ context.Context, _ int64) int       { return math.MaxInt }
 
 // quotaKeyTTL is how long a daily quota key lives. The calendar date is part of
 // the key, so this is only cleanup; it just needs to outlast the UTC day.
@@ -26,6 +37,11 @@ type QuotaService interface {
 	Allow(ctx context.Context, userID int64) (bool, error)
 	// Release refunds one slot (e.g. the create failed or was a dedup no-op).
 	Release(ctx context.Context, userID int64)
+	// Reset sets the day's counter to 0 while preserving the key TTL.
+	// Called on plan upgrade so the new higher limit takes effect immediately.
+	Reset(ctx context.Context, userID int64)
+	// Remaining returns slots left today. Fails open (math.MaxInt) on Redis unavailable.
+	Remaining(ctx context.Context, userID int64) int
 }
 
 type quotaService struct {
@@ -69,6 +85,9 @@ func (s *quotaService) key(userID int64) string {
 func (s *quotaService) DailyLimit(ctx context.Context, userID int64) int {
 	if sub, err := s.subs.GetActiveByUserID(ctx, userID); err == nil {
 		if plan, perr := s.plans.GetByID(ctx, sub.PlanID); perr == nil {
+			if plan.DailyLinkQuota == -1 {
+				return math.MaxInt // unlimited plan
+			}
 			return plan.DailyLinkQuota
 		} else {
 			slog.Warn("quota: active subscription plan lookup failed; falling back to default plan",
@@ -76,6 +95,9 @@ func (s *quotaService) DailyLimit(ctx context.Context, userID int64) int {
 		}
 	}
 	if plan, err := s.plans.GetByCode(ctx, s.defaultPlanCode); err == nil {
+		if plan.DailyLinkQuota == -1 {
+			return math.MaxInt
+		}
 		return plan.DailyLinkQuota
 	}
 	slog.Warn("quota: falling back to configured limit (plan lookup failed)", "user_id", userID)
@@ -116,6 +138,40 @@ func (s *quotaService) Allow(ctx context.Context, userID int64) (bool, error) {
 // Release refunds one slot for the current day.
 func (s *quotaService) Release(ctx context.Context, userID int64) {
 	s.decr(ctx, s.key(userID))
+}
+
+// Reset sets the day's counter to 0 while preserving the key TTL.
+// Called on upgrade so the new higher limit takes effect immediately.
+func (s *quotaService) Reset(ctx context.Context, userID int64) {
+	_, _ = s.breaker.Do(func() (any, error) {
+		// KEEPTTL preserves day-boundary TTL; only the counter resets.
+		return s.rdb.Client.Set(ctx, s.key(userID), 0, redis.KeepTTL).Result()
+	})
+}
+
+// Remaining returns the number of link-creation slots left today.
+// Fails open (math.MaxInt) when Redis is unavailable so quota issues never
+// hard-block users.
+func (s *quotaService) Remaining(ctx context.Context, userID int64) int {
+	limit := s.DailyLimit(ctx, userID)
+	if limit == math.MaxInt {
+		return math.MaxInt // unlimited plan — skip Redis lookup
+	}
+	res, err := s.breaker.Do(func() (any, error) {
+		val, err := s.rdb.Client.Get(ctx, s.key(userID)).Int64()
+		if errors.Is(err, redis.Nil) {
+			return 0, nil // a miss is not a breaker failure
+		}
+		return val, err
+	})
+	if redisbreaker.IsUnavailable(err) {
+		return math.MaxInt // fail open
+	}
+	used, _ := res.(int64)
+	if r := limit - int(used); r > 0 {
+		return r
+	}
+	return 0
 }
 
 func (s *quotaService) decr(ctx context.Context, key string) {

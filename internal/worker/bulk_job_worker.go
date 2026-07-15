@@ -20,12 +20,13 @@ const uploadTimeout = 60 * time.Second
 type BulkJobWorker struct {
 	jobs    repository.BulkJobRepository
 	links   service.LinkService
+	quota   service.QuotaService
 	storage storage.R2Client
 	baseURL string
 }
 
-func NewBulkJobWorker(jobs repository.BulkJobRepository, links service.LinkService, s storage.R2Client, baseURL string) *BulkJobWorker {
-	return &BulkJobWorker{jobs: jobs, links: links, storage: s, baseURL: baseURL}
+func NewBulkJobWorker(jobs repository.BulkJobRepository, links service.LinkService, quota service.QuotaService, s storage.R2Client, baseURL string) *BulkJobWorker {
+	return &BulkJobWorker{jobs: jobs, links: links, quota: quota, storage: s, baseURL: baseURL}
 }
 
 // Process handles one job end-to-end. Idempotent: no-op if status != pending.
@@ -51,6 +52,17 @@ func (w *BulkJobWorker) Process(ctx context.Context, jobID int64) error {
 }
 
 func (w *BulkJobWorker) process(ctx context.Context, job *repository.BulkJob) error {
+	// Safety net: quota may have dropped between ConfirmUpload and when this worker runs.
+	// Permanent failure — return nil so Kafka commits the offset (retrying would keep failing).
+	remaining := w.quota.Remaining(ctx, job.OwnerID)
+	if job.TotalRows > remaining {
+		_ = w.jobs.UpdateStatus(ctx, job.ID, repository.BulkJobStatusFailed, job.TotalRows)
+		slog.Warn("bulk worker: quota insufficient, job failed permanently",
+			"job_id", job.ID, "owner_id", job.OwnerID,
+			"needed", job.TotalRows, "remaining", remaining)
+		return nil
+	}
+
 	rc, err := w.storage.Download(ctx, job.FileKey)
 	if err != nil {
 		return fmt.Errorf("bulk worker: download job %d: %w", job.ID, err)

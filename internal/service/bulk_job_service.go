@@ -38,10 +38,11 @@ type bulkJobService struct {
 	jobs    repository.BulkJobRepository
 	storage storage.R2Client
 	baseURL string
+	quota   QuotaService
 }
 
-func NewBulkJobService(jobs repository.BulkJobRepository, s storage.R2Client, baseURL string) BulkJobService {
-	return &bulkJobService{jobs: jobs, storage: s, baseURL: baseURL}
+func NewBulkJobService(jobs repository.BulkJobRepository, s storage.R2Client, baseURL string, quota QuotaService) BulkJobService {
+	return &bulkJobService{jobs: jobs, storage: s, baseURL: baseURL, quota: quota}
 }
 
 func (s *bulkJobService) GetUploadURL(ctx context.Context, ownerID int64, filename, contentMD5 string, rowCount int) (string, string, error) {
@@ -65,6 +66,13 @@ func (s *bulkJobService) GetUploadURL(ctx context.Context, ownerID int64, filena
 }
 
 func (s *bulkJobService) ConfirmUpload(ctx context.Context, ownerID int64, fileKey, filename string, rowCount int) (*repository.BulkJob, error) {
+	remaining := s.quota.Remaining(ctx, ownerID)
+	if rowCount > remaining {
+		return nil, apperror.TooManyRequests(fmt.Sprintf(
+			"quota insufficient: need %d slots, only %d remaining today", rowCount, remaining,
+		))
+	}
+
 	job := &repository.BulkJob{
 		OwnerID:   ownerID,
 		FileKey:   fileKey,

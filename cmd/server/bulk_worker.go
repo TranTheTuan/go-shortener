@@ -55,7 +55,9 @@ func runBulkWorker() error {
 	linkSvc := service.NewLinkService(linkRepo, nil, cfg.Shortener.CodeLength, cfg.Shortener.CacheTTL)
 
 	bulkRepo := repository.NewBulkJobRepository(db)
-	w := worker.NewBulkJobWorker(bulkRepo, linkSvc, r2, cfg.Shortener.BaseURL)
+	// Quota check in the worker is a safety net; use a pass-through so the
+	// bulk-worker binary avoids a Redis dependency. Primary gate is the API server.
+	w := worker.NewBulkJobWorker(bulkRepo, linkSvc, service.UnlimitedQuota{}, r2, cfg.Shortener.BaseURL)
 
 	consumer, err := events.NewBulkJobConsumer(cfg.Kafka, w)
 	if err != nil {

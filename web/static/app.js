@@ -22,16 +22,16 @@ const confirmDelete = (shortURL) => new Promise((resolve) => {
   const cleanup = (result) => {
     backdrop.hidden = true;
     off($("modal-confirm"), "click", onOk);
-    off($("modal-cancel"),  "click", onCancel);
-    off(backdrop,           "click", onBackdrop);
+    off($("modal-cancel"), "click", onCancel);
+    off(backdrop, "click", onBackdrop);
     resolve(result);
   };
-  const onOk       = () => cleanup(true);
-  const onCancel   = () => cleanup(false);
+  const onOk = () => cleanup(true);
+  const onCancel = () => cleanup(false);
   const onBackdrop = (e) => { if (e.target === backdrop) cleanup(false); };
 
   $("modal-confirm").addEventListener("click", onOk);
-  $("modal-cancel").addEventListener("click",  onCancel);
+  $("modal-cancel").addEventListener("click", onCancel);
   backdrop.addEventListener("click", onBackdrop);
 });
 const off = (el, ev, fn) => el.removeEventListener(ev, fn);
@@ -61,7 +61,7 @@ async function main() {
 
   text("status", "");
   if (authenticated) {
-    renderSignedIn(kc);
+    renderSignedIn(kc, cfg);
   } else {
     renderSignedOut(kc);
   }
@@ -73,7 +73,7 @@ function renderSignedOut(kc) {
   $("signin").onclick = () => kc.login({ redirectUri: location.origin + "/" });
 }
 
-function renderSignedIn(kc) {
+function renderSignedIn(kc, cfg) {
   $("status").hidden = true;
   $("app").hidden = false;
   // Use the same redirect URI shape as login (origin + "/") so it matches the
@@ -97,6 +97,7 @@ function renderSignedIn(kc) {
   wireCreateForm(api, links.reload);
   wireStatsForm(api);
   wireBulk(api);
+  if (cfg.paddleClientToken) wireBilling(api, cfg.paddleClientToken);
 }
 
 // wireNav switches between sidebar views and keeps the URL hash in sync so a
@@ -104,7 +105,7 @@ function renderSignedIn(kc) {
 function wireNav() {
   const items = document.querySelectorAll(".nav-item");
   const views = document.querySelectorAll(".view");
-  const titles = { create: "Create link", links: "My links", stats: "Stats", bulk: "Bulk upload" };
+  const titles = { create: "Create link", links: "My links", stats: "Stats", bulk: "Bulk upload", billing: "Billing" };
 
   const show = (name) => {
     if (!titles[name]) name = "create";
@@ -451,8 +452,8 @@ function wireLinks(api) {
         if (it.expires_at) input.value = toLocalInput(it.expires_at);
         editTd.append(
           input,
-          actionBtn("Save",   () => save(it, { expires_at: input.value ? new Date(input.value).toISOString() : null })),
-          actionBtn("Clear",  () => save(it, { expires_at: null })),
+          actionBtn("Save", () => save(it, { expires_at: input.value ? new Date(input.value).toISOString() : null })),
+          actionBtn("Clear", () => save(it, { expires_at: null })),
           actionBtn("Cancel", () => editTr.remove()),
         );
         editTr.append(editTd);
@@ -535,3 +536,214 @@ function wireLinks(api) {
 }
 
 main();
+
+// PLAN display metadata (cosmetic only — no price IDs here).
+const PLAN_META = {
+  basic: { desc: "Get started for free", features: ["10 links / day", "Click stats", "Custom expiry"] },
+  pro: { desc: "For power users", features: ["500 links / day", "Bulk upload", "Click stats", "Custom expiry"] },
+  business: { desc: "Unlimited links", features: ["Unlimited links / day", "Bulk upload", "Priority support", "Click stats"] },
+};
+
+function wireBilling(api, paddleClientToken) {
+  const navBtn = $("billing-nav");
+  if (navBtn) navBtn.hidden = false;
+
+  let paddleReady = false;
+
+  const script = document.createElement("script");
+  script.src = "https://cdn.paddle.com/paddle/v2/paddle.js";
+  script.onload = () => {
+    Paddle.Environment.set('sandbox');
+    Paddle.Initialize({ token: paddleClientToken });
+    paddleReady = true;
+  };
+  document.head.appendChild(script);
+
+  async function load() {
+    $("billing-loading").hidden = false;
+    $("billing-content").hidden = true;
+
+    let subRes, subJson, plansRes, plansJson, meJson;
+    try {
+      [subRes, plansRes] = await Promise.all([api("/api/subscription"), fetch("/api/plans")]);
+      const meRes = await api("/auth/me");
+      [subJson, plansJson, meJson] = await Promise.all([
+        subRes.json().catch(() => ({})),
+        plansRes.json().catch(() => ({})),
+        meRes.json().catch(() => ({})),
+      ]);
+    } catch {
+      $("billing-loading").textContent = "Could not load plan info.";
+      return;
+    }
+    if (!subRes.ok) {
+      $("billing-loading").textContent = "Error: " + (subJson.error?.message || subRes.status);
+      return;
+    }
+
+    const plans = plansJson.data ?? [];
+    const userEmail = meJson.data?.email ?? null;
+
+    $("billing-loading").hidden = true;
+    $("billing-content").hidden = false;
+    renderCurrentPlan(subJson.data);
+    renderPlanGrid(subJson.data, plans, userEmail);
+  }
+
+  function renderCurrentPlan(data) {
+    const card = $("current-plan-card");
+    const planCode = data.plan?.code ?? "basic";
+    const quotaRemaining = data.quota_remaining;
+    const sub = data.subscription;
+    const meta = PLAN_META[planCode] ?? PLAN_META.basic;
+
+    card.innerHTML = "";
+
+    const header = document.createElement("div");
+    header.className = "plan-card-header";
+
+    const nameWrap = document.createElement("div");
+    const nameEl = document.createElement("span");
+    nameEl.className = "plan-name";
+    nameEl.textContent = data.plan?.name ?? "Basic";
+    const badge = document.createElement("span");
+    badge.className = "badge badge-active plan-current-badge";
+    badge.textContent = "current";
+    nameWrap.append(nameEl, badge);
+
+    const quota = document.createElement("div");
+    quota.className = "plan-quota";
+    quota.textContent = quotaRemaining === 2147483647
+      ? "Unlimited links remaining today"
+      : `${quotaRemaining} link${quotaRemaining !== 1 ? "s" : ""} remaining today`;
+
+    header.append(nameWrap, quota);
+    card.append(header);
+
+    const renewsText = sub?.current_period_end
+      ? "Renews " + new Date(sub.current_period_end).toLocaleDateString()
+      : "";
+    const canceledText = sub?.canceled_at ? "Cancels at period end" : "";
+    if (renewsText || canceledText) {
+      const p = document.createElement("p");
+      p.className = "plan-meta-text";
+      p.textContent = canceledText || renewsText;
+      card.append(p);
+    }
+
+    if (sub?.paddle_customer_id) {
+      const btn = document.createElement("button");
+      btn.textContent = "Manage subscription →";
+      btn.className = "portal-btn";
+      btn.onclick = () => { window.location.href = "/api/subscription/portal"; };
+      card.append(btn);
+    }
+  }
+
+  function renderPlanGrid(data, plans, userEmail) {
+    const grid = $("plan-grid");
+    grid.innerHTML = "";
+    const currentCode = data.plan?.code ?? "basic";
+    const currentInterval = data.subscription?.billing_interval ?? "monthly";
+    const paddleCustomerId = data.subscription?.paddle_customer_id ?? null;
+    const userId = data.subscription?.user_id ?? null;
+
+    const toggle = document.createElement("div");
+    toggle.className = "interval-toggle";
+    let activeInterval = currentInterval;
+
+    ["monthly", "yearly"].forEach((iv) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = iv === "yearly" ? "Yearly (save ~27%)" : "Monthly";
+      btn.className = "interval-btn" + (iv === activeInterval ? " active" : "");
+      btn.dataset.interval = iv;
+      btn.onclick = () => {
+        toggle.querySelectorAll(".interval-btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        activeInterval = iv;
+        renderCards(iv);
+      };
+      toggle.append(btn);
+    });
+    grid.append(toggle);
+
+    const cardsContainer = document.createElement("div");
+    cardsContainer.className = "plan-cards";
+    grid.append(cardsContainer);
+
+    function renderCards(iv) {
+      cardsContainer.innerHTML = "";
+      for (const plan of plans) {
+        if (plan.code === "basic") continue;
+        const meta = PLAN_META[plan.code] ?? { desc: "", features: [] };
+        const priceId = iv === "yearly" ? plan.paddle_price_id_yearly : plan.paddle_price_id_monthly;
+        const priceCents = plan.price_cents;
+        const priceDisplay = priceCents === 0 ? "Free"
+          : iv === "yearly" ? `$${Math.round(priceCents * 10 / 100)}/yr`
+            : `$${(priceCents / 100).toFixed(0)}/mo`;
+
+        const card = document.createElement("div");
+        card.className = "plan-option" + (plan.code === currentCode ? " plan-option-current" : "");
+
+        const hd = document.createElement("div");
+        hd.className = "plan-option-header";
+        const nm = document.createElement("span");
+        nm.className = "plan-option-name";
+        nm.textContent = plan.name;
+        const pr = document.createElement("span");
+        pr.className = "plan-option-price";
+        pr.textContent = priceDisplay;
+        hd.append(nm, pr);
+
+        const desc = document.createElement("p");
+        desc.className = "plan-option-desc";
+        desc.textContent = meta.desc;
+
+        const ul = document.createElement("ul");
+        ul.className = "plan-features";
+        for (const f of meta.features) {
+          const li = document.createElement("li");
+          li.textContent = f;
+          ul.append(li);
+        }
+
+        const btn = document.createElement("button");
+        const isCurrent = plan.code === currentCode;
+        btn.className = isCurrent ? "plan-btn plan-btn-current" : "plan-btn primary";
+        btn.disabled = isCurrent;
+        btn.textContent = isCurrent ? "Current plan" : "Upgrade";
+        if (!isCurrent && priceId) {
+          btn.onclick = () => openCheckout(priceId, paddleCustomerId, userEmail, userId);
+        }
+
+        card.append(hd, desc, ul, btn);
+        cardsContainer.append(card);
+      }
+    }
+
+    renderCards(activeInterval);
+  }
+
+  function openCheckout(priceId, paddleCustomerId, userEmail, userId) {
+    if (!paddleReady) {
+      alert("Paddle is still loading, please try again in a moment.");
+      return;
+    }
+    const customer = paddleCustomerId
+      ? { id: paddleCustomerId }
+      : userEmail ? { email: userEmail } : undefined;
+    Paddle.Checkout.open({
+      items: [{ priceId, quantity: 1 }],
+      customer,
+      settings: { successUrl: location.origin + "/#billing" },
+      customData: { user_id: userId },
+    });
+  }
+
+  document.querySelectorAll(".nav-item").forEach((btn) => {
+    if (btn.dataset.view === "billing") btn.addEventListener("click", load);
+  });
+
+  if (location.hash === "#billing") load();
+}

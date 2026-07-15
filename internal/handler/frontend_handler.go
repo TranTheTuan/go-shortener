@@ -11,24 +11,26 @@ import (
 // values are derived from the backend's Keycloak settings so the frontend and
 // backend can never drift, and changing realm/client needs no rebuild.
 type FrontendHandler struct {
-	authURL  string
-	realm    string
-	clientID string
+	authURL           string
+	realm             string
+	clientID          string
+	paddleClientToken string
 }
 
 // NewFrontendHandler derives the public Keycloak settings from the issuer URL
 // (`{authURL}/realms/{realm}`) and the client ID.
-func NewFrontendHandler(issuer, clientID string) *FrontendHandler {
+func NewFrontendHandler(issuer, clientID, paddleClientToken string) *FrontendHandler {
 	authURL, realm := parseIssuer(issuer)
-	return &FrontendHandler{authURL: authURL, realm: realm, clientID: clientID}
+	return &FrontendHandler{authURL: authURL, realm: realm, clientID: clientID, paddleClientToken: paddleClientToken}
 }
 
 // appConfig is the public configuration payload for the SPA (no secrets — the
 // frontend is a public OIDC client).
 type appConfig struct {
-	AuthURL  string `json:"authUrl"`
-	Realm    string `json:"realm"`
-	ClientID string `json:"clientId"`
+	AuthURL           string `json:"authUrl"`
+	Realm             string `json:"realm"`
+	ClientID          string `json:"clientId"`
+	PaddleClientToken string `json:"paddleClientToken,omitempty"`
 }
 
 // Config handles GET /app-config.json.
@@ -37,9 +39,10 @@ func (h *FrontendHandler) Config(c echo.Context) error {
 	// redeploy. no-cache forces revalidation while still allowing a 304.
 	c.Response().Header().Set("Cache-Control", "no-cache")
 	return c.JSON(http.StatusOK, appConfig{
-		AuthURL:  h.authURL,
-		Realm:    h.realm,
-		ClientID: h.clientID,
+		AuthURL:           h.authURL,
+		Realm:             h.realm,
+		ClientID:          h.clientID,
+		PaddleClientToken: h.paddleClientToken,
 	})
 }
 

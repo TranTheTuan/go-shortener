@@ -5,7 +5,7 @@ export
 MIGRATIONS_PATH ?= migrations
 DB_URL := postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)
 
-.PHONY: help run build run-consumer tidy test lint swag \
+.PHONY: help run build run-consumer tidy test lint swag mock \
 	migrate-create migrate-up migrate-down migrate-force migrate-version
 
 help: ## Show this help.
@@ -26,6 +26,14 @@ run-bulk: ## Run the bulk worker (same binary, "bulk-worker" subcommand).
 
 tidy: ## Tidy module dependencies.
 	go mod tidy
+
+mock: ## Regenerate gomock mocks (requires go install go.uber.org/mock/mockgen@latest).
+	mockgen -destination=internal/service/mocks/repository/mock_repositories.go -package=mocksrepository \
+		github.com/TranTheTuan/go-shortener/internal/repository \
+		PlanRepository,SubscriptionRepository,UserRepository
+	mockgen -destination=internal/service/mocks/service/mock_quota_service.go -package=mocksservice \
+		github.com/TranTheTuan/go-shortener/internal/service \
+		QuotaService
 
 test: ## Run the test suite.
 	go test -race -covermode=atomic ./...

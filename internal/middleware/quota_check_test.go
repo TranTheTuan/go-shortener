@@ -20,7 +20,9 @@ func (m *mockQuota) Allow(_ context.Context, _ int64) (bool, error) {
 	m.allowCalls++
 	return m.allow, nil
 }
-func (m *mockQuota) Release(_ context.Context, _ int64) { m.releaseCalls++ }
+func (m *mockQuota) Release(_ context.Context, _ int64)       { m.releaseCalls++ }
+func (m *mockQuota) Reset(_ context.Context, _ int64)         {}
+func (m *mockQuota) Remaining(_ context.Context, _ int64) int { return 0 }
 
 func quotaCtx(e *echo.Echo, withUser bool) (echo.Context, *httptest.ResponseRecorder) {
 	req := httptest.NewRequest(http.MethodPost, "/api/links", nil)
