@@ -559,8 +559,12 @@ function wireBilling(api, paddleClientToken) {
       token: paddleClientToken,
       eventCallback: function (data) {
         if (data.name == "checkout.completed") {
-          console.log("Checkout completed:", data);
-          load();
+          // ponytail: webhook lag — reload a few times until backend catches up
+          const poll = (attempts) => {
+            load();
+            if (attempts > 0) setTimeout(() => poll(attempts - 1), 2000);
+          };
+          setTimeout(() => poll(3), 1500);
         }
       }
     });
@@ -606,6 +610,7 @@ function wireBilling(api, paddleClientToken) {
     const sub = data.subscription;
     const meta = PLAN_META[planCode] ?? PLAN_META.basic;
 
+    card.dataset.plan = planCode;
     card.innerHTML = "";
 
     const header = document.createElement("div");
