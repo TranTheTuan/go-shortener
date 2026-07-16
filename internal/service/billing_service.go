@@ -14,13 +14,6 @@ import (
 	paddlepkg "github.com/TranTheTuan/go-shortener/pkg/paddle"
 )
 
-// planOrder defines upgrade direction: basic < pro < business.
-var planOrder = map[string]int{
-	"basic":    0,
-	"pro":      1,
-	"business": 2,
-}
-
 // PaddleEvent is the raw webhook payload queued from the HTTP handler.
 type PaddleEvent struct {
 	EventType string `json:"event_type"`
@@ -88,13 +81,6 @@ func (s *billingService) HandleEvent(ctx context.Context, evt PaddleEvent) error
 		}
 		return s.handleSubscriptionCanceled(ctx, e.Data)
 
-	case paddlenotification.EventTypeNameTransactionCompleted:
-		var e paddlenotification.TransactionCompleted
-		if err := json.Unmarshal(evt.Raw, &e); err != nil {
-			return apperror.Internal(fmt.Errorf("billing: parse transaction.completed: %w", err))
-		}
-		return s.handleTransactionCompleted(ctx, e.Data)
-
 	default:
 		slog.Debug("billing: unhandled paddle event", "type", evt.EventType, "id", evt.EventID)
 		return nil
@@ -115,7 +101,7 @@ func (s *billingService) handleSubscriptionCreated(ctx context.Context, data pad
 	periodEnd := s.periodEndFromNotification(data.CurrentBillingPeriod)
 	paddleSubID := data.ID
 	paddleCustID := data.CustomerID
-	status := "active"
+	status := s.mapSubscriptionStatus(data.Status)
 
 	sub := &repository.Subscription{
 		UserID:               userID,
@@ -139,14 +125,20 @@ func (s *billingService) handleSubscriptionCreated(ctx context.Context, data pad
 }
 
 func (s *billingService) handleSubscriptionUpdated(ctx context.Context, data paddlenotification.SubscriptionNotification) error {
-	// Status=canceled means Paddle deactivated after period end — set to canceled.
-	if data.Status == paddlenotification.SubscriptionStatusCanceled {
+	status := s.mapSubscriptionStatus(data.Status)
+
+	if data.ScheduledChange != nil && data.ScheduledChange.Action == paddlenotification.ScheduledChangeActionCancel {
 		paddleSubID := data.ID
 		paddleCustID := data.CustomerID
+		canceledAt := s.resolveCanceledAt(data)
+		if canceledAt == nil {
+			now := time.Now().UTC()
+			canceledAt = &now
+		}
 		sub := &repository.Subscription{
 			PaddleSubscriptionID: &paddleSubID,
 			PaddleCustomerID:     &paddleCustID,
-			Status:               "canceled",
+			CanceledAt:           canceledAt,
 		}
 		if _, err := s.subs.UpsertByPaddleID(ctx, sub); err != nil {
 			return apperror.Internal(fmt.Errorf("billing: upsert canceled subscription: %w", err))
@@ -162,77 +154,44 @@ func (s *billingService) handleSubscriptionUpdated(ctx context.Context, data pad
 		return nil
 	}
 
-	// Detect upgrade by comparing plan order.
-	existing, err := s.subs.GetActiveByUserID(ctx, s.userIDFromPaddleSubID(ctx, data.ID))
-	isUpgrade := false
-	if err == nil && existing != nil {
-		existingPlan, perr := s.plans.GetByID(ctx, existing.PlanID)
-		newPlan, nerr := s.plans.GetByID(ctx, planID)
-		if perr == nil && nerr == nil {
-			isUpgrade = planOrder[newPlan.Code] > planOrder[existingPlan.Code]
-		}
-	}
-
 	paddleSubID := data.ID
 	paddleCustID := data.CustomerID
 	periodEnd := s.periodEndFromNotification(data.CurrentBillingPeriod)
+	periodStart := s.periodStartFromNotification(data.CurrentBillingPeriod)
+
 	sub := &repository.Subscription{
 		PaddleSubscriptionID: &paddleSubID,
 		PaddleCustomerID:     &paddleCustID,
 		PlanID:               planID,
 		PaddlePriceID:        &priceID,
 		BillingInterval:      &interval,
-		Status:               "active",
+		Status:               status,
 		CurrentPeriodEnd:     periodEnd,
+		CurrentPeriodStart:   *periodStart,
 	}
 	if _, err := s.subs.UpsertByPaddleID(ctx, sub); err != nil {
 		return apperror.Internal(fmt.Errorf("billing: upsert updated subscription: %w", err))
 	}
 
-	if isUpgrade {
-		userID := s.userIDFromPaddleSubIDViaDB(ctx, data.ID)
-		if userID > 0 {
-			s.quota.Reset(ctx, userID)
-			slog.Info("billing: quota reset after upgrade", "user_id", userID, "plan_id", planID)
-		}
-	}
 	return nil
 }
 
 func (s *billingService) handleSubscriptionCanceled(ctx context.Context, data paddlenotification.SubscriptionNotification) error {
-	// User canceled — keep status active until period end, just set canceled_at.
-	now := time.Now().UTC()
+	canceledAt := s.resolveCanceledAt(data)
+	if canceledAt == nil {
+		now := time.Now().UTC()
+		canceledAt = &now
+	}
 	paddleSubID := data.ID
 	paddleCustID := data.CustomerID
 	sub := &repository.Subscription{
 		PaddleSubscriptionID: &paddleSubID,
 		PaddleCustomerID:     &paddleCustID,
-		CanceledAt:           &now,
-		Status:               "active", // still active until period_end
+		CanceledAt:           canceledAt,
+		Status:               "canceled",
 	}
 	if _, err := s.subs.UpsertByPaddleID(ctx, sub); err != nil {
-		return apperror.Internal(fmt.Errorf("billing: upsert canceled_at: %w", err))
-	}
-	return nil
-}
-
-func (s *billingService) handleTransactionCompleted(ctx context.Context, data paddlenotification.TransactionNotification) error {
-	if data.SubscriptionID == nil || data.BillingPeriod == nil {
-		return nil // not a subscription renewal
-	}
-	periodEnd, err := time.Parse(time.RFC3339, data.BillingPeriod.EndsAt)
-	if err != nil {
-		return apperror.Internal(fmt.Errorf("billing: parse billing period end: %w", err))
-	}
-
-	paddleSubID := *data.SubscriptionID
-	sub := &repository.Subscription{
-		PaddleSubscriptionID: &paddleSubID,
-		CurrentPeriodEnd:     &periodEnd,
-		Status:               "active",
-	}
-	if _, err := s.subs.UpsertByPaddleID(ctx, sub); err != nil {
-		return apperror.Internal(fmt.Errorf("billing: extend period_end: %w", err))
+		return apperror.Internal(fmt.Errorf("billing: upsert canceled subscription: %w", err))
 	}
 	return nil
 }
@@ -292,6 +251,18 @@ func (s *billingService) periodEndFromNotification(p *paddlenotification.TimePer
 	return &t
 }
 
+// periodStartFromNotification extracts period start from a TimePeriod pointer (nil-safe).
+func (s *billingService) periodStartFromNotification(p *paddlenotification.TimePeriod) *time.Time {
+	if p == nil || p.StartsAt == "" {
+		return nil
+	}
+	t, err := time.Parse(time.RFC3339, p.StartsAt)
+	if err != nil {
+		return nil
+	}
+	return &t
+}
+
 // userIDFromCustomData extracts the user_id passed during Paddle Checkout.
 func (s *billingService) userIDFromCustomData(data paddlenotification.CustomData) (int64, error) {
 	raw, ok := data["user_id"]
@@ -312,16 +283,33 @@ func (s *billingService) userIDFromCustomData(data paddlenotification.CustomData
 	}
 }
 
-// userIDFromPaddleSubID looks up user_id from an existing subscription row.
-// Returns 0 on any error — quota reset is best-effort.
-func (s *billingService) userIDFromPaddleSubID(ctx context.Context, paddleSubID string) int64 {
-	return s.userIDFromPaddleSubIDViaDB(ctx, paddleSubID)
+func (s *billingService) mapSubscriptionStatus(status paddlenotification.SubscriptionStatus) string {
+	switch status {
+	case paddlenotification.SubscriptionStatusActive, paddlenotification.SubscriptionStatusTrialing:
+		return "active"
+	case paddlenotification.SubscriptionStatusPaused:
+		return "paused"
+	case paddlenotification.SubscriptionStatusPastDue:
+		return "past_due"
+	default:
+		return "canceled"
+	}
 }
 
-func (s *billingService) userIDFromPaddleSubIDViaDB(ctx context.Context, paddleSubID string) int64 {
-	sub, err := s.subs.GetByPaddleSubscriptionID(ctx, paddleSubID)
-	if err != nil {
-		return 0
+func (s *billingService) resolveCanceledAt(data paddlenotification.SubscriptionNotification) *time.Time {
+	if data.CanceledAt != nil && *data.CanceledAt != "" {
+		if t, err := time.Parse(time.RFC3339, *data.CanceledAt); err == nil {
+			return &t
+		}
 	}
-	return sub.UserID
+	if data.ScheduledChange != nil && data.ScheduledChange.Action == paddlenotification.ScheduledChangeActionCancel {
+		if data.ScheduledChange.EffectiveAt != "" {
+			if t, err := time.Parse(time.RFC3339, data.ScheduledChange.EffectiveAt); err == nil {
+				return &t
+			}
+		}
+		now := time.Now().UTC()
+		return &now
+	}
+	return nil
 }
