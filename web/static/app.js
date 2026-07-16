@@ -543,6 +543,7 @@ const PLAN_META = {
   pro: { desc: "For power users", features: ["500 links / day", "Bulk upload", "Click stats", "Custom expiry"] },
   business: { desc: "Unlimited links", features: ["Unlimited links / day", "Bulk upload", "Priority support", "Click stats"] },
 };
+const PLAN_RANK = { basic: 0, pro: 1, business: 2 };
 
 function wireBilling(api, paddleClientToken) {
   const navBtn = $("billing-nav");
@@ -554,7 +555,12 @@ function wireBilling(api, paddleClientToken) {
   script.src = "https://cdn.paddle.com/paddle/v2/paddle.js";
   script.onload = () => {
     Paddle.Environment.set('sandbox');
-    Paddle.Initialize({ token: paddleClientToken });
+    Paddle.Initialize({
+      token: paddleClientToken,
+      eventCallback(e) {
+        if (e.name === "checkout.completed") load();
+      },
+    });
     paddleReady = true;
   };
   document.head.appendChild(script);
@@ -727,10 +733,11 @@ function wireBilling(api, paddleClientToken) {
 
         const btn = document.createElement("button");
         const isCurrent = plan.code === currentCode;
+        const isDowngrade = (PLAN_RANK[plan.code] ?? 0) < (PLAN_RANK[currentCode] ?? 0);
         btn.className = isCurrent ? "plan-btn plan-btn-current" : "plan-btn primary";
-        btn.disabled = isCurrent;
-        btn.textContent = isCurrent ? "Current plan" : "Upgrade";
-        if (!isCurrent && priceId) {
+        btn.disabled = isCurrent || isDowngrade;
+        btn.textContent = isCurrent ? "Current plan" : isDowngrade ? "Downgrade not supported" : "Upgrade";
+        if (!isCurrent && !isDowngrade && priceId) {
           btn.onclick = () => openCheckout(priceId, paddleCustomerId, userEmail, userId);
         }
 
