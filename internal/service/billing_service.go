@@ -160,6 +160,7 @@ func (s *billingService) handleSubscriptionUpdated(ctx context.Context, data pad
 	paddleCustID := data.CustomerID
 	periodEnd := s.periodEndFromNotification(data.CurrentBillingPeriod)
 	periodStart := s.periodStartFromNotification(data.CurrentBillingPeriod)
+	canceledAt := s.resolveCanceledAt(data)
 
 	sub := &repository.Subscription{
 		PaddleSubscriptionID: &paddleSubID,
@@ -170,6 +171,7 @@ func (s *billingService) handleSubscriptionUpdated(ctx context.Context, data pad
 		Status:               status,
 		CurrentPeriodEnd:     periodEnd,
 		CurrentPeriodStart:   *periodStart,
+		CanceledAt:           canceledAt,
 	}
 	if _, err := s.subs.UpsertByPaddleID(ctx, sub); err != nil {
 		return apperror.Internal(fmt.Errorf("billing: upsert updated subscription: %w", err))
