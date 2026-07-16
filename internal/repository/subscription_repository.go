@@ -39,6 +39,8 @@ type SubscriptionRepository interface {
 	GetByPaddleSubscriptionID(ctx context.Context, paddleSubID string) (*Subscription, error)
 	// GetByUserID returns all subscriptions for a user.
 	GetByUserID(ctx context.Context, userID int64) ([]*Subscription, error)
+	// ClearCanceledAt sets canceled_at = NULL for the given paddle_subscription_id.
+	ClearCanceledAt(ctx context.Context, paddleSubID string) error
 }
 
 // subscriptionRepository is the GORM-backed SubscriptionRepository.
@@ -99,6 +101,14 @@ func (r *subscriptionRepository) UpsertByUserID(ctx context.Context, sub *Subscr
 		return nil, result.Error
 	}
 	return sub, nil
+}
+
+// ClearCanceledAt sets canceled_at = NULL for the given paddle_subscription_id.
+func (r *subscriptionRepository) ClearCanceledAt(ctx context.Context, paddleSubID string) error {
+	return r.db.WithContext(ctx).
+		Model(&Subscription{}).
+		Where("paddle_subscription_id = ?", paddleSubID).
+		Update("canceled_at", nil).Error
 }
 
 // GetByPaddleSubscriptionID returns the subscription with the given Paddle subscription ID.
