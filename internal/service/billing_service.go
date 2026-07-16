@@ -29,6 +29,8 @@ type BillingService interface {
 	CurrentPlan(ctx context.Context, userID int64) (*repository.Plan, *repository.Subscription, error)
 	// GeneratePortalURL creates a Paddle Customer Portal session URL for the given customer.
 	GeneratePortalURL(ctx context.Context, paddleCustomerID string) (string, error)
+	// UpgradeSubscription switches an existing subscription to a new price immediately.
+	UpgradeSubscription(ctx context.Context, userID int64, priceID string) error
 }
 
 type billingService struct {
@@ -222,6 +224,23 @@ func (s *billingService) GeneratePortalURL(ctx context.Context, paddleCustomerID
 		return "", apperror.Internal(fmt.Errorf("billing: create portal session: %w", err))
 	}
 	return url, nil
+}
+
+func (s *billingService) UpgradeSubscription(ctx context.Context, userID int64, priceID string) error {
+	_, sub, err := s.CurrentPlan(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if sub == nil || sub.PaddleSubscriptionID == nil {
+		return apperror.New(404, "NO_SUBSCRIPTION", "no active subscription to upgrade")
+	}
+	if s.sdk == nil {
+		return apperror.Internal(fmt.Errorf("billing: paddle SDK not configured"))
+	}
+	if err := s.sdk.UpdateSubscription(ctx, *sub.PaddleSubscriptionID, priceID); err != nil {
+		return apperror.Internal(fmt.Errorf("billing: update subscription: %w", err))
+	}
+	return nil
 }
 
 // resolvePlanFromItems extracts the price ID from the first subscription item

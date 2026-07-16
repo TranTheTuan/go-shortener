@@ -13,6 +13,7 @@ import (
 // service code from the concrete SDK type.
 type Client interface {
 	CreatePortalSession(ctx context.Context, customerID string) (string, error)
+	UpdateSubscription(ctx context.Context, subscriptionID, priceID string) error
 }
 
 // NewVerifier returns a Paddle webhook verifier for the given secret key.
@@ -32,6 +33,22 @@ func NewClient(apiKey, baseURL string) (Client, error) {
 
 type paddleClient struct {
 	sdk *paddlesdk.SDK
+}
+
+// UpdateSubscription swaps the subscription to a new price, billed prorated immediately.
+func (c *paddleClient) UpdateSubscription(ctx context.Context, subscriptionID, priceID string) error {
+	items := []paddlesdk.UpdateSubscriptionItems{
+		*paddlesdk.NewUpdateSubscriptionItemsSubscriptionUpdateItemFromCatalog(&paddlesdk.SubscriptionUpdateItemFromCatalog{
+			PriceID:  priceID,
+			Quantity: 1,
+		}),
+	}
+	_, err := c.sdk.UpdateSubscription(ctx, &paddlesdk.UpdateSubscriptionRequest{
+		SubscriptionID:       subscriptionID,
+		Items:                paddlesdk.NewPatchField(items),
+		ProrationBillingMode: paddlesdk.NewPatchField(paddlesdk.ProrationBillingModeProratedImmediately),
+	})
+	return err
 }
 
 // CreatePortalSession creates a Paddle Customer Portal session and returns

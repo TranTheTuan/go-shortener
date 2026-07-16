@@ -559,12 +559,19 @@ function wireBilling(api, paddleClientToken) {
       token: paddleClientToken,
       eventCallback: function (data) {
         if (data.name == "checkout.completed") {
-          // ponytail: webhook lag — reload a few times until backend catches up
-          const poll = (attempts) => {
-            load();
-            if (attempts > 0) setTimeout(() => poll(attempts - 1), 2000);
+          // Poll silently until plan changes, then reload once.
+          const currentPlan = document.querySelector(".plan-option-current")?.dataset?.code ?? null;
+          const pollUntilChanged = (attempts) => {
+            if (attempts <= 0) return;
+            api("/api/subscription").then(r => r.json()).then(j => {
+              if (j.data?.plan?.code && j.data.plan.code !== currentPlan) {
+                load();
+              } else {
+                setTimeout(() => pollUntilChanged(attempts - 1), 2000);
+              }
+            }).catch(() => setTimeout(() => pollUntilChanged(attempts - 1), 2000));
           };
-          setTimeout(() => poll(3), 1500);
+          setTimeout(() => pollUntilChanged(5), 1500);
         }
       }
     });
@@ -677,11 +684,12 @@ function wireBilling(api, paddleClientToken) {
     const currentCode = data.plan?.code ?? "basic";
     const currentInterval = data.subscription?.billing_interval ?? "monthly";
     const paddleCustomerId = data.subscription?.paddle_customer_id ?? null;
+    const paddleSubscriptionId = data.subscription?.paddle_subscription_id ?? null;
     const userId = data.subscription?.user_id ?? null;
 
     const toggle = document.createElement("div");
     toggle.className = "interval-toggle";
-    let activeInterval = currentInterval;
+    let activeInterval = "yearly";
 
     ["monthly", "yearly"].forEach((iv) => {
       const btn = document.createElement("button");
@@ -716,6 +724,7 @@ function wireBilling(api, paddleClientToken) {
 
         const card = document.createElement("div");
         card.className = "plan-option" + (plan.code === currentCode ? " plan-option-current" : "");
+        card.dataset.code = plan.code;
 
         const hd = document.createElement("div");
         hd.className = "plan-option-header";
@@ -746,7 +755,31 @@ function wireBilling(api, paddleClientToken) {
         btn.disabled = isCurrent || isDowngrade;
         btn.textContent = isCurrent ? "Current plan" : isDowngrade ? "Downgrade not supported" : "Upgrade";
         if (!isCurrent && !isDowngrade && priceId) {
-          btn.onclick = () => openCheckout(priceId, paddleCustomerId, userEmail, userId);
+          if (paddleSubscriptionId) {
+            btn.onclick = async () => {
+              btn.disabled = true;
+              btn.textContent = "Upgrading…";
+              try {
+                const res = await api("/api/subscription/upgrade", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ price_id: priceId }),
+                });
+                if (!res.ok) {
+                  const json = await res.json().catch(() => ({}));
+                  throw new Error(json.error?.message || res.status);
+                }
+                btn.textContent = "Upgraded!";
+                btn.disabled = true;
+              } catch (e) {
+                alert("Upgrade failed: " + e.message);
+                btn.disabled = false;
+                btn.textContent = "Upgrade";
+              }
+            };
+          } else {
+            btn.onclick = () => openCheckout(priceId, paddleCustomerId, userEmail, userId);
+          }
         }
 
         card.append(hd, desc, ul, btn);
