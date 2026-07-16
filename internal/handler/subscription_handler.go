@@ -76,7 +76,41 @@ func (h *SubscriptionHandler) Get(c echo.Context) error {
 	})
 }
 
-// portalURLPayload is the response body for GET /api/subscription/portal.
+// upgradeRequest is the request body for POST /api/subscription/upgrade.
+type upgradeRequest struct {
+	PriceID string `json:"price_id"`
+}
+
+// Upgrade handles POST /api/subscription/upgrade.
+//
+// @Summary      Upgrade active subscription to a new price
+// @Tags         billing
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      handler.upgradeRequest  true  "price_id to switch to"
+// @Success      200   {object}  response.Envelope
+// @Failure      400   {object}  response.Envelope  "no subscription or missing price_id"
+// @Failure      401   {object}  response.Envelope
+// @Failure      500   {object}  response.Envelope
+// @Router       /api/subscription/upgrade [post]
+func (h *SubscriptionHandler) Upgrade(c echo.Context) error {
+	userID, ok := appmw.UserIDFrom(c)
+	if !ok {
+		return response.Error(c, apperror.New(http.StatusUnauthorized, "UNAUTHORIZED", "not authenticated"))
+	}
+
+	var req upgradeRequest
+	if err := c.Bind(&req); err != nil || req.PriceID == "" {
+		return response.Error(c, apperror.New(http.StatusBadRequest, "BAD_REQUEST", "price_id is required"))
+	}
+
+	if err := h.billing.UpgradeSubscription(c.Request().Context(), userID, req.PriceID); err != nil {
+		return response.Error(c, err)
+	}
+	return response.Success(c, http.StatusOK, map[string]bool{"ok": true})
+}
+
 type portalURLPayload struct {
 	URL string `json:"url"`
 }

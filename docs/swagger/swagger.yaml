@@ -181,6 +181,11 @@ definitions:
       is_active:
         type: boolean
     type: object
+  internal_handler.upgradeRequest:
+    properties:
+      price_id:
+        type: string
+    type: object
   internal_handler.uploadURLRequest:
     properties:
       content_md5:
@@ -664,6 +669,41 @@ paths:
       security:
       - BearerAuth: []
       summary: Get Paddle Customer Portal URL
+      tags:
+      - billing
+  /api/subscription/upgrade:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: price_id to switch to
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.upgradeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "400":
+          description: no subscription or missing price_id
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Upgrade active subscription to a new price
       tags:
       - billing
   /auth/me:

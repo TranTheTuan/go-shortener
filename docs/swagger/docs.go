@@ -699,6 +699,62 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/subscription/upgrade": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "billing"
+                ],
+                "summary": "Upgrade active subscription to a new price",
+                "parameters": [
+                    {
+                        "description": "price_id to switch to",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.upgradeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    },
+                    "400": {
+                        "description": "no subscription or missing price_id",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/me": {
             "get": {
                 "security": [
@@ -1167,6 +1223,14 @@ const docTemplate = `{
                 },
                 "is_active": {
                     "type": "boolean"
+                }
+            }
+        },
+        "internal_handler.upgradeRequest": {
+            "type": "object",
+            "properties": {
+                "price_id": {
+                    "type": "string"
                 }
             }
         },

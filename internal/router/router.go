@@ -135,6 +135,7 @@ func registerRoutes(e *echo.Echo, h Handlers, deps Deps) {
 		sub := api.Group("/subscription")
 		sub.GET("", h.Subscription.Get)
 		sub.GET("/portal", h.Subscription.Portal)
+		sub.POST("/upgrade", h.Subscription.Upgrade)
 	}
 	if h.Webhook != nil && deps.PaddleVerifier != nil {
 		e.POST("/webhook/paddle", h.Webhook.PaddleWebhook, appmw.PaddleSignature(deps.PaddleVerifier))
