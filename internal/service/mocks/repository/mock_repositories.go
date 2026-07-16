@@ -125,6 +125,20 @@ func (m *MockSubscriptionRepository) EXPECT() *MockSubscriptionRepositoryMockRec
 	return m.recorder
 }
 
+// ClearCanceledAt mocks base method.
+func (m *MockSubscriptionRepository) ClearCanceledAt(ctx context.Context, paddleSubID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClearCanceledAt", ctx, paddleSubID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ClearCanceledAt indicates an expected call of ClearCanceledAt.
+func (mr *MockSubscriptionRepositoryMockRecorder) ClearCanceledAt(ctx, paddleSubID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClearCanceledAt", reflect.TypeOf((*MockSubscriptionRepository)(nil).ClearCanceledAt), ctx, paddleSubID)
+}
+
 // Create mocks base method.
 func (m *MockSubscriptionRepository) Create(ctx context.Context, sub *repository.Subscription) (*repository.Subscription, error) {
 	m.ctrl.T.Helper()

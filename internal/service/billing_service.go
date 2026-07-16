@@ -177,6 +177,12 @@ func (s *billingService) handleSubscriptionUpdated(ctx context.Context, data pad
 		return apperror.Internal(fmt.Errorf("billing: upsert updated subscription: %w", err))
 	}
 
+	if canceledAt == nil {
+		if err := s.subs.ClearCanceledAt(ctx, paddleSubID); err != nil {
+			return apperror.Internal(fmt.Errorf("billing: clear canceled_at: %w", err))
+		}
+	}
+
 	return nil
 }
 
