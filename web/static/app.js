@@ -557,9 +557,12 @@ function wireBilling(api, paddleClientToken) {
     Paddle.Environment.set('sandbox');
     Paddle.Initialize({
       token: paddleClientToken,
-      eventCallback(e) {
-        if (e.name === "checkout.completed") load();
-      },
+      eventCallback: function (data) {
+        if (data.name == "checkout.completed") {
+          console.log("Checkout completed:", data);
+          load();
+        }
+      }
     });
     paddleReady = true;
   };
