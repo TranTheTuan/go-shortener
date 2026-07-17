@@ -18,7 +18,15 @@ func RunWebhookWorker(ctx context.Context, queue <-chan service.PaddleEvent, bil
 		case evt := <-queue:
 			processWithRetry(ctx, evt, billing)
 		case <-ctx.Done():
-			return
+			// drain remaining events
+			for {
+				select {
+				case evt := <-queue:
+					processWithRetry(context.Background(), evt, billing)
+				default:
+					return
+				}
+			}
 		}
 	}
 }
