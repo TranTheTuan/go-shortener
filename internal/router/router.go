@@ -100,7 +100,6 @@ func registerRoutes(e *echo.Echo, h Handlers, deps Deps) {
 	// Current authenticated user (Keycloak token required).
 	auth := e.Group("/auth")
 	auth.GET("/me", h.Auth.Me, keycloakMW)
-	auth.POST("/terms/accept", h.Auth.AcceptTerms, keycloakMW)
 
 	// User lookups require authentication so the roster (usernames + emails) is
 	// not exposed anonymously.
@@ -111,6 +110,7 @@ func registerRoutes(e *echo.Echo, h Handlers, deps Deps) {
 	// Link management — authenticated by a Keycloak access token; the token's
 	// user owns the links and is subject to the daily quota.
 	api := e.Group("/api", keycloakMW)
+	api.POST("/terms/accept", h.Auth.AcceptTerms, keycloakMW)
 	links := api.Group("/links")
 	// Create chain: dedup fast-path → quota check → handler.
 	links.POST("", h.Link.Create, appmw.DuplicateURLCheck(deps.Dedup), appmw.QuotaCheck(deps.Quota))
