@@ -42,8 +42,8 @@ async function checkTermsGate(api, cfg, kc) {
   const currentVersion = cfg.termsVersion;
   const cached = localStorage.getItem("terms_version");
 
-  // Fast path: user already accepted this version
-  if (cached === currentVersion) {
+  // Fast path: same user already accepted this version
+  if (cached === kc.subject + ":" + currentVersion) {
     return true;
   }
 
@@ -80,7 +80,7 @@ async function checkTermsGate(api, cfg, kc) {
         }
 
         // Cache the acceptance
-        localStorage.setItem("terms_version", currentVersion);
+        localStorage.setItem("terms_version", kc.subject + ":" + currentVersion);
 
         // Clean up and resolve
         cleanup();
