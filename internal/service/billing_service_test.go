@@ -85,9 +85,11 @@ func TestBillingService_HandleEvent_SubscriptionCreated(t *testing.T) {
 	plans.EXPECT().GetByPaddlePriceID(gomock.Any(), "pri_pro_monthly").Return(proPlan, nil)
 
 	subs := mocksrepository.NewMockSubscriptionRepository(ctrl)
-	subs.EXPECT().UpsertByUserID(gomock.Any(), gomock.Any()).DoAndReturn(
-		func(_ context.Context, sub *repository.Subscription) (*repository.Subscription, error) {
-			return sub, nil
+	// No existing subscription for this user — GetByUserID returns nil.
+	subs.EXPECT().GetByUserID(gomock.Any(), int64(42)).Return(nil, nil)
+	subs.EXPECT().Update(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, sub *repository.Subscription) error {
+			return nil
 		},
 	)
 
@@ -108,16 +110,25 @@ func TestBillingService_HandleEvent_SubscriptionCreated(t *testing.T) {
 func TestBillingService_HandleEvent_SubscriptionCanceled_SetsCanceledAt(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
+	existingSub := &repository.Subscription{
+		ID:                   10,
+		UserID:               7,
+		PlanID:               2,
+		Status:               "active",
+		PaddleSubscriptionID: strPtr("sub_002"),
+	}
+
 	subs := mocksrepository.NewMockSubscriptionRepository(ctrl)
-	subs.EXPECT().UpsertByPaddleID(gomock.Any(), gomock.AssignableToTypeOf(&repository.Subscription{})).DoAndReturn(
-		func(_ context.Context, sub *repository.Subscription) (*repository.Subscription, error) {
+	subs.EXPECT().GetByPaddleSubscriptionID(gomock.Any(), "sub_002").Return(existingSub, nil)
+	subs.EXPECT().Update(gomock.Any(), gomock.AssignableToTypeOf(&repository.Subscription{})).DoAndReturn(
+		func(_ context.Context, sub *repository.Subscription) error {
 			if sub.CanceledAt == nil {
 				t.Error("canceled_at must be set")
 			}
 			if sub.Status != "canceled" {
 				t.Errorf("status = %q, want canceled", sub.Status)
 			}
-			return sub, nil
+			return nil
 		},
 	)
 

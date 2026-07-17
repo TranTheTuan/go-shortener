@@ -78,19 +78,19 @@ func (h *SubscriptionHandler) Get(c echo.Context) error {
 
 // upgradeRequest is the request body for POST /api/subscription/upgrade.
 type upgradeRequest struct {
-	PriceID string `json:"price_id"`
+	PlanID int64 `json:"plan_id"`
 }
 
 // Upgrade handles POST /api/subscription/upgrade.
 //
-// @Summary      Upgrade active subscription to a new price
+// @Summary      Upgrade active subscription to a higher-tier plan (same billing interval)
 // @Tags         billing
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        body  body      handler.upgradeRequest  true  "price_id to switch to"
+// @Param        body  body      handler.upgradeRequest  true  "plan_id to upgrade to"
 // @Success      200   {object}  response.Envelope
-// @Failure      400   {object}  response.Envelope  "no subscription or missing price_id"
+// @Failure      400   {object}  response.Envelope  "no subscription, invalid plan, or same/lower tier"
 // @Failure      401   {object}  response.Envelope
 // @Failure      500   {object}  response.Envelope
 // @Router       /api/subscription/upgrade [post]
@@ -101,11 +101,11 @@ func (h *SubscriptionHandler) Upgrade(c echo.Context) error {
 	}
 
 	var req upgradeRequest
-	if err := c.Bind(&req); err != nil || req.PriceID == "" {
-		return response.Error(c, apperror.New(http.StatusBadRequest, "BAD_REQUEST", "price_id is required"))
+	if err := c.Bind(&req); err != nil || req.PlanID == 0 {
+		return response.Error(c, apperror.New(http.StatusBadRequest, "BAD_REQUEST", "plan_id is required"))
 	}
 
-	if err := h.billing.UpgradeSubscription(c.Request().Context(), userID, req.PriceID); err != nil {
+	if err := h.billing.UpgradeSubscription(c.Request().Context(), userID, req.PlanID); err != nil {
 		return response.Error(c, err)
 	}
 	return response.Success(c, http.StatusOK, map[string]bool{"ok": true})

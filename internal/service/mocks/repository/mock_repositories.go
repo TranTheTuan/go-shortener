@@ -125,20 +125,6 @@ func (m *MockSubscriptionRepository) EXPECT() *MockSubscriptionRepositoryMockRec
 	return m.recorder
 }
 
-// ClearCanceledAt mocks base method.
-func (m *MockSubscriptionRepository) ClearCanceledAt(ctx context.Context, paddleSubID string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ClearCanceledAt", ctx, paddleSubID)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// ClearCanceledAt indicates an expected call of ClearCanceledAt.
-func (mr *MockSubscriptionRepositoryMockRecorder) ClearCanceledAt(ctx, paddleSubID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClearCanceledAt", reflect.TypeOf((*MockSubscriptionRepository)(nil).ClearCanceledAt), ctx, paddleSubID)
-}
-
 // Create mocks base method.
 func (m *MockSubscriptionRepository) Create(ctx context.Context, sub *repository.Subscription) (*repository.Subscription, error) {
 	m.ctrl.T.Helper()
@@ -185,10 +171,10 @@ func (mr *MockSubscriptionRepositoryMockRecorder) GetByPaddleSubscriptionID(ctx,
 }
 
 // GetByUserID mocks base method.
-func (m *MockSubscriptionRepository) GetByUserID(ctx context.Context, userID int64) ([]*repository.Subscription, error) {
+func (m *MockSubscriptionRepository) GetByUserID(ctx context.Context, userID int64) (*repository.Subscription, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetByUserID", ctx, userID)
-	ret0, _ := ret[0].([]*repository.Subscription)
+	ret0, _ := ret[0].(*repository.Subscription)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -199,34 +185,18 @@ func (mr *MockSubscriptionRepositoryMockRecorder) GetByUserID(ctx, userID any) *
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByUserID", reflect.TypeOf((*MockSubscriptionRepository)(nil).GetByUserID), ctx, userID)
 }
 
-// UpsertByPaddleID mocks base method.
-func (m *MockSubscriptionRepository) UpsertByPaddleID(ctx context.Context, sub *repository.Subscription) (*repository.Subscription, error) {
+// Update mocks base method.
+func (m *MockSubscriptionRepository) Update(ctx context.Context, sub *repository.Subscription) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpsertByPaddleID", ctx, sub)
-	ret0, _ := ret[0].(*repository.Subscription)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
+	ret := m.ctrl.Call(m, "Update", ctx, sub)
+	ret0, _ := ret[0].(error)
+	return ret0
 }
 
-// UpsertByPaddleID indicates an expected call of UpsertByPaddleID.
-func (mr *MockSubscriptionRepositoryMockRecorder) UpsertByPaddleID(ctx, sub any) *gomock.Call {
+// Update indicates an expected call of Update.
+func (mr *MockSubscriptionRepositoryMockRecorder) Update(ctx, sub any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpsertByPaddleID", reflect.TypeOf((*MockSubscriptionRepository)(nil).UpsertByPaddleID), ctx, sub)
-}
-
-// UpsertByUserID mocks base method.
-func (m *MockSubscriptionRepository) UpsertByUserID(ctx context.Context, sub *repository.Subscription) (*repository.Subscription, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpsertByUserID", ctx, sub)
-	ret0, _ := ret[0].(*repository.Subscription)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// UpsertByUserID indicates an expected call of UpsertByUserID.
-func (mr *MockSubscriptionRepositoryMockRecorder) UpsertByUserID(ctx, sub any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpsertByUserID", reflect.TypeOf((*MockSubscriptionRepository)(nil).UpsertByUserID), ctx, sub)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Update", reflect.TypeOf((*MockSubscriptionRepository)(nil).Update), ctx, sub)
 }
 
 // MockUserRepository is a mock of UserRepository interface.
