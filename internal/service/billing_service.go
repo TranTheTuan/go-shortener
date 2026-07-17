@@ -29,8 +29,8 @@ type BillingService interface {
 	CurrentPlan(ctx context.Context, userID int64) (*repository.Plan, *repository.Subscription, error)
 	// GeneratePortalURL creates a Paddle Customer Portal session URL for the given customer.
 	GeneratePortalURL(ctx context.Context, paddleCustomerID string) (string, error)
-	// UpgradeSubscription switches an existing subscription to a new price immediately.
-	UpgradeSubscription(ctx context.Context, userID int64, priceID string) error
+	// UpgradeSubscription switches an existing subscription to a higher-tier plan, same billing interval.
+	UpgradeSubscription(ctx context.Context, userID int64, planID int64) error
 }
 
 type billingService struct {
@@ -67,14 +67,22 @@ func (s *billingService) HandleEvent(ctx context.Context, evt PaddleEvent) error
 		if err := json.Unmarshal(evt.Raw, &e); err != nil {
 			return apperror.Internal(fmt.Errorf("billing: parse subscription.created: %w", err))
 		}
-		return s.handleSubscriptionCreated(ctx, e.Data)
+		userID, err := s.userIDFromCustomData(e.Data.CustomData)
+		if err != nil {
+			return apperror.Internal(fmt.Errorf("billing: user_id missing: %w", err))
+		}
+		return s.handleSubscriptionCreated(ctx, userID, e.Data)
 
 	case paddlenotification.EventTypeNameSubscriptionUpdated:
 		var e paddlenotification.SubscriptionUpdated
 		if err := json.Unmarshal(evt.Raw, &e); err != nil {
 			return apperror.Internal(fmt.Errorf("billing: parse subscription.updated: %w", err))
 		}
-		return s.handleSubscriptionUpdated(ctx, e.Data)
+		userID, err := s.userIDFromCustomData(e.Data.CustomData)
+		if err != nil {
+			return apperror.Internal(fmt.Errorf("billing: user_id missing: %w", err))
+		}
+		return s.handleSubscriptionUpdated(ctx, userID, e.Data)
 
 	case paddlenotification.EventTypeNameSubscriptionCanceled:
 		var e paddlenotification.SubscriptionCanceled
@@ -89,15 +97,11 @@ func (s *billingService) HandleEvent(ctx context.Context, evt PaddleEvent) error
 	}
 }
 
-func (s *billingService) handleSubscriptionCreated(ctx context.Context, data paddlenotification.SubscriptionCreatedNotification) error {
-	userID, err := s.userIDFromCustomData(data.CustomData)
-	if err != nil {
-		return apperror.Internal(fmt.Errorf("billing: subscription.created: %w", err))
-	}
-
+func (s *billingService) handleSubscriptionCreated(ctx context.Context, userID int64, data paddlenotification.SubscriptionCreatedNotification) error {
 	priceID, planID, interval, err := s.resolvePlanFromItems(ctx, data.Items)
 	if err != nil {
-		return err
+		slog.Debug("billing: subscription.created price not in catalog, ignoring", "sub_id", data.ID)
+		return nil
 	}
 
 	periodStart := s.periodStartFromNotification(data.CurrentBillingPeriod)
@@ -106,19 +110,25 @@ func (s *billingService) handleSubscriptionCreated(ctx context.Context, data pad
 	paddleCustID := data.CustomerID
 	status := s.mapSubscriptionStatus(data.Status)
 
-	sub := &repository.Subscription{
-		UserID:               userID,
-		PlanID:               planID,
-		Status:               status,
-		CurrentPeriodStart:   periodStart,
-		CurrentPeriodEnd:     periodEnd,
-		PaddleSubscriptionID: &paddleSubID,
-		PaddleCustomerID:     &paddleCustID,
-		PaddlePriceID:        &priceID,
-		BillingInterval:      &interval,
+	sub, err := s.subs.GetByUserID(ctx, userID)
+	if err != nil {
+		return apperror.Internal(fmt.Errorf("billing: fetch subscription: %w", err))
 	}
-	if _, err := s.subs.UpsertByUserID(ctx, sub); err != nil {
-		return apperror.Internal(fmt.Errorf("billing: upsert subscription: %w", err))
+	if sub == nil {
+		sub = &repository.Subscription{UserID: userID}
+	}
+
+	sub.PlanID = planID
+	sub.Status = status
+	sub.CurrentPeriodStart = periodStart
+	sub.CurrentPeriodEnd = periodEnd
+	sub.PaddleSubscriptionID = &paddleSubID
+	sub.PaddleCustomerID = &paddleCustID
+	sub.PaddlePriceID = &priceID
+	sub.BillingInterval = &interval
+
+	if err := s.subs.Update(ctx, sub); err != nil {
+		return apperror.Internal(fmt.Errorf("billing: update subscription: %w", err))
 	}
 
 	if err := s.users.UpdatePaddleCustomerID(ctx, userID, paddleCustID); err != nil {
@@ -127,24 +137,34 @@ func (s *billingService) handleSubscriptionCreated(ctx context.Context, data pad
 	return nil
 }
 
-func (s *billingService) handleSubscriptionUpdated(ctx context.Context, data paddlenotification.SubscriptionNotification) error {
+func (s *billingService) handleSubscriptionUpdated(ctx context.Context, userID int64, data paddlenotification.SubscriptionNotification) error {
 	status := s.mapSubscriptionStatus(data.Status)
+	paddleSubID := data.ID
+	paddleCustID := data.CustomerID
+	canceledAt := s.resolveCanceledAt(data)
+
+	sub, err := s.subs.GetByPaddleSubscriptionID(ctx, paddleSubID)
+	if err != nil && err != repository.ErrNotFound {
+		return apperror.Internal(fmt.Errorf("billing: fetch subscription: %w", err))
+	}
+	if err == repository.ErrNotFound {
+		// in case subscription.updated arrives before subscription.created since paddle can't guarantee order of arrivals
+		sub = &repository.Subscription{
+			UserID:               userID,
+			PaddleSubscriptionID: &paddleSubID,
+		}
+	}
 
 	if data.ScheduledChange != nil && data.ScheduledChange.Action == paddlenotification.ScheduledChangeActionCancel {
-		paddleSubID := data.ID
-		paddleCustID := data.CustomerID
-		canceledAt := s.resolveCanceledAt(data)
 		if canceledAt == nil {
 			now := time.Now().UTC()
 			canceledAt = &now
 		}
-		sub := &repository.Subscription{
-			PaddleSubscriptionID: &paddleSubID,
-			PaddleCustomerID:     &paddleCustID,
-			CanceledAt:           canceledAt,
-		}
-		if _, err := s.subs.UpsertByPaddleID(ctx, sub); err != nil {
-			return apperror.Internal(fmt.Errorf("billing: upsert canceled subscription: %w", err))
+		sub.PaddleCustomerID = &paddleCustID
+		sub.CanceledAt = canceledAt
+
+		if err := s.subs.Update(ctx, sub); err != nil {
+			return apperror.Internal(fmt.Errorf("billing: save canceled subscription: %w", err))
 		}
 		return nil
 	}
@@ -153,35 +173,24 @@ func (s *billingService) handleSubscriptionUpdated(ctx context.Context, data pad
 	priceID, planID, interval, err := s.resolvePlanFromItems(ctx, data.Items)
 	if err != nil {
 		// price not in our catalog — ignore
-		slog.Debug("billing: subscription.updated price not in catalog, ignoring", "sub_id", data.ID)
+		slog.Debug("billing: subscription.updated price not in catalog, ignoring", "sub_id", paddleSubID)
 		return nil
 	}
 
-	paddleSubID := data.ID
-	paddleCustID := data.CustomerID
 	periodEnd := s.periodEndFromNotification(data.CurrentBillingPeriod)
 	periodStart := s.periodStartFromNotification(data.CurrentBillingPeriod)
-	canceledAt := s.resolveCanceledAt(data)
 
-	sub := &repository.Subscription{
-		PaddleSubscriptionID: &paddleSubID,
-		PaddleCustomerID:     &paddleCustID,
-		PlanID:               planID,
-		PaddlePriceID:        &priceID,
-		BillingInterval:      &interval,
-		Status:               status,
-		CurrentPeriodEnd:     periodEnd,
-		CurrentPeriodStart:   periodStart,
-		CanceledAt:           canceledAt,
-	}
-	if _, err := s.subs.UpsertByPaddleID(ctx, sub); err != nil {
-		return apperror.Internal(fmt.Errorf("billing: upsert updated subscription: %w", err))
-	}
+	sub.PaddleCustomerID = &paddleCustID
+	sub.PlanID = planID
+	sub.PaddlePriceID = &priceID
+	sub.BillingInterval = &interval
+	sub.Status = status
+	sub.CurrentPeriodEnd = periodEnd
+	sub.CurrentPeriodStart = periodStart
+	sub.CanceledAt = canceledAt
 
-	if canceledAt == nil {
-		if err := s.subs.ClearCanceledAt(ctx, paddleSubID); err != nil {
-			return apperror.Internal(fmt.Errorf("billing: clear canceled_at: %w", err))
-		}
+	if err := s.subs.Update(ctx, sub); err != nil {
+		return apperror.Internal(fmt.Errorf("billing: save updated subscription: %w", err))
 	}
 
 	return nil
@@ -195,14 +204,22 @@ func (s *billingService) handleSubscriptionCanceled(ctx context.Context, data pa
 	}
 	paddleSubID := data.ID
 	paddleCustID := data.CustomerID
-	sub := &repository.Subscription{
-		PaddleSubscriptionID: &paddleSubID,
-		PaddleCustomerID:     &paddleCustID,
-		CanceledAt:           canceledAt,
-		Status:               "canceled",
+
+	sub, err := s.subs.GetByPaddleSubscriptionID(ctx, paddleSubID)
+	if err != nil && err != repository.ErrNotFound {
+		return apperror.Internal(fmt.Errorf("billing: fetch subscription: %w", err))
 	}
-	if _, err := s.subs.UpsertByPaddleID(ctx, sub); err != nil {
-		return apperror.Internal(fmt.Errorf("billing: upsert canceled subscription: %w", err))
+	if err == repository.ErrNotFound {
+		slog.Debug("billing: subscription.canceled event for unknown sub, ignoring", "sub_id", paddleSubID)
+		return nil
+	}
+
+	sub.PaddleCustomerID = &paddleCustID
+	sub.CanceledAt = canceledAt
+	sub.Status = "canceled"
+
+	if err := s.subs.Update(ctx, sub); err != nil {
+		return apperror.Internal(fmt.Errorf("billing: save canceled subscription: %w", err))
 	}
 	return nil
 }
@@ -235,8 +252,15 @@ func (s *billingService) GeneratePortalURL(ctx context.Context, paddleCustomerID
 	return url, nil
 }
 
-func (s *billingService) UpgradeSubscription(ctx context.Context, userID int64, priceID string) error {
-	_, sub, err := s.CurrentPlan(ctx, userID)
+// planRank defines the fixed upgrade hierarchy: basic < pro < business.
+var planRank = map[string]int{
+	"basic":    0,
+	"pro":      1,
+	"business": 2,
+}
+
+func (s *billingService) UpgradeSubscription(ctx context.Context, userID int64, planID int64) error {
+	currentPlan, sub, err := s.CurrentPlan(ctx, userID)
 	if err != nil {
 		return err
 	}
@@ -246,7 +270,40 @@ func (s *billingService) UpgradeSubscription(ctx context.Context, userID int64, 
 	if s.sdk == nil {
 		return apperror.Internal(fmt.Errorf("billing: paddle SDK not configured"))
 	}
-	if err := s.sdk.UpdateSubscription(ctx, *sub.PaddleSubscriptionID, priceID); err != nil {
+
+	targetPlan, err := s.plans.GetByID(ctx, planID)
+	if err != nil {
+		return apperror.New(400, "INVALID_PLAN", "target plan not found")
+	}
+
+	currentRank, currentOk := planRank[currentPlan.Code]
+	targetRank, targetOk := planRank[targetPlan.Code]
+	if !currentOk || !targetOk || targetRank <= currentRank {
+		return apperror.New(400, "INVALID_UPGRADE", "must upgrade to a higher tier plan")
+	}
+
+	// Resolve the correct Paddle price ID based on the current billing interval.
+	if sub.BillingInterval == nil {
+		return apperror.New(400, "INVALID_SUBSCRIPTION", "current subscription has no billing interval")
+	}
+	var priceID string
+	switch *sub.BillingInterval {
+	case "month":
+		if targetPlan.PaddlePriceIDMonthly == nil {
+			return apperror.New(400, "UNAVAILABLE", "target plan is not available with monthly billing")
+		}
+		priceID = *targetPlan.PaddlePriceIDMonthly
+	case "year":
+		if targetPlan.PaddlePriceIDYearly == nil {
+			return apperror.New(400, "UNAVAILABLE", "target plan is not available with yearly billing")
+		}
+		priceID = *targetPlan.PaddlePriceIDYearly
+	default:
+		return apperror.New(400, "INVALID_SUBSCRIPTION", fmt.Sprintf("unknown billing interval %q", *sub.BillingInterval))
+	}
+
+	customData := map[string]any{"user_id": userID}
+	if err := s.sdk.UpdateSubscription(ctx, *sub.PaddleSubscriptionID, priceID, customData); err != nil {
 		return apperror.Internal(fmt.Errorf("billing: update subscription: %w", err))
 	}
 	return nil

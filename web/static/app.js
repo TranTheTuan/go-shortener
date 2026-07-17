@@ -689,7 +689,7 @@ function wireBilling(api, paddleClientToken) {
 
     const toggle = document.createElement("div");
     toggle.className = "interval-toggle";
-    let activeInterval = "yearly";
+    let activeInterval = "monthly";
 
     ["monthly", "yearly"].forEach((iv) => {
       const btn = document.createElement("button");
@@ -754,7 +754,7 @@ function wireBilling(api, paddleClientToken) {
         btn.className = isCurrent ? "plan-btn plan-btn-current" : "plan-btn primary";
         btn.disabled = isCurrent || isDowngrade;
         btn.textContent = isCurrent ? "Current plan" : isDowngrade ? "Downgrade not supported" : "Upgrade";
-        if (!isCurrent && !isDowngrade && priceId) {
+        if (!isCurrent && !isDowngrade) {
           if (paddleSubscriptionId) {
             btn.onclick = async () => {
               btn.disabled = true;
@@ -763,7 +763,7 @@ function wireBilling(api, paddleClientToken) {
                 const res = await api("/api/subscription/upgrade", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ price_id: priceId }),
+                  body: JSON.stringify({ plan_id: plan.id }),
                 });
                 if (!res.ok) {
                   const json = await res.json().catch(() => ({}));
@@ -778,6 +778,7 @@ function wireBilling(api, paddleClientToken) {
               }
             };
           } else {
+            const priceId = iv === "yearly" ? plan.paddle_price_id_yearly : plan.paddle_price_id_monthly;
             btn.onclick = () => openCheckout(priceId, paddleCustomerId, userEmail, userId);
           }
         }
