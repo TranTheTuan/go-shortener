@@ -215,6 +215,16 @@ func (m *mockUserRepo) UpdatePaddleCustomerID(_ context.Context, userID int64, c
 	return nil
 }
 
+func (m *mockUserRepo) UpdateTermsAccepted(_ context.Context, userID int64, version string, acceptedAt time.Time) error {
+	if u, ok := m.users[userID]; ok {
+		u.TermsVersion = &version
+		u.TermsAcceptedAt = &acceptedAt
+		return nil
+	}
+	// User not found
+	return repository.ErrNotFound
+}
+
 func (m *mockUserRepo) List(_ context.Context) ([]*repository.User, error) {
 	out := make([]*repository.User, 0, len(m.users))
 	for _, u := range m.users {

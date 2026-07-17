@@ -12,6 +12,7 @@ package mocksrepository
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	repository "github.com/TranTheTuan/go-shortener/internal/repository"
 	gomock "go.uber.org/mock/gomock"
@@ -355,4 +356,18 @@ func (m *MockUserRepository) UpdatePaddleCustomerID(ctx context.Context, userID 
 func (mr *MockUserRepositoryMockRecorder) UpdatePaddleCustomerID(ctx, userID, customerID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdatePaddleCustomerID", reflect.TypeOf((*MockUserRepository)(nil).UpdatePaddleCustomerID), ctx, userID, customerID)
+}
+
+// UpdateTermsAccepted mocks base method.
+func (m *MockUserRepository) UpdateTermsAccepted(ctx context.Context, userID int64, version string, acceptedAt time.Time) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateTermsAccepted", ctx, userID, version, acceptedAt)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateTermsAccepted indicates an expected call of UpdateTermsAccepted.
+func (mr *MockUserRepositoryMockRecorder) UpdateTermsAccepted(ctx, userID, version, acceptedAt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateTermsAccepted", reflect.TypeOf((*MockUserRepository)(nil).UpdateTermsAccepted), ctx, userID, version, acceptedAt)
 }

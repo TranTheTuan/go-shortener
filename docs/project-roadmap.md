@@ -1,7 +1,7 @@
 # Project Roadmap & Development Status
 
-**Current Date**: 2026-06-30  
-**Active Branch**: `master` (Keycloak OIDC resource server)  
+**Current Date**: 2026-07-17  
+**Active Branch**: `master` (Billing interval + quota display fix)  
 **Latest**: v1.1 merged
 
 ## Version History
@@ -155,7 +155,48 @@
 
 ## Upcoming Work (Post v1.1)
 
-### v1.2 - Keycloak Role-Based Authorization (Planned)
+### v1.2 - Billing & Subscription Management (IN PROGRESS) — 2026-07-17
+**Status**: 60% Complete | **Current Branch**: `master`
+
+#### Completed ✅
+- ✅ **Paddle integration**: Subscription lifecycle webhooks (`subscription.created/updated/canceled`)
+- ✅ **Plan hierarchy**: Basic (1 link/day) < Pro (50/day) < Business (unlimited)
+- ✅ **Daily quota enforcement**: Redis counter per UTC day; reset on plan upgrade
+- ✅ **Billing intervals**: Monthly and yearly pricing via Paddle
+- ✅ **Plan + interval change**: Allow users to change subscription tier AND billing interval simultaneously
+  - `ChangeSubscription` service method (replaces `UpgradeSubscription`)
+  - Same-tier interval changes now allowed (e.g., Pro/monthly → Pro/yearly)
+  - Downgrade rule: tier rank must not decrease; interval changes unrestricted
+  - Frontend interval toggle initializes from current subscription
+  - Quota display fixed: 64-bit max (math.MaxInt) instead of 32-bit
+- ✅ **Terms & Conditions gate**: Versioned acceptance with modal UX
+  - DB table tracks per-user T&C version acceptance
+  - Backend `/api/agreements/accept/{version}` endpoint
+  - Version bump triggers re-acceptance on next login
+  - Modal UI with decline/accept options
+  - Integrated with billing feature access
+- ✅ **API endpoints**: 
+  - `GET /api/plans` — List plans with Paddle pricing (monthly/yearly)
+  - `GET /api/subscription` — Current plan + quota remaining + renewal date
+  - `POST /api/subscription/upgrade` — Plan change with interval (no downgrade, prorated immediately)
+  - `GET /api/subscription/portal` — Paddle Customer Portal redirect
+  - `POST /api/agreements/accept/{version}` — Accept T&C version
+- ✅ **UI components**: Plan comparison grid, billing interval toggle, subscription card, quota display, T&C modal
+
+#### Planned (v1.2 Phase 2)
+- [ ] Invoice/receipt history (`GET /api/subscription/invoices`)
+- [ ] Plan downgrade endpoint with confirmation
+- [ ] Manual plan reset (admin-only)
+- [ ] Trial period support (if Paddle introduces)
+
+#### Notes
+- Paddle webhook signature validation via middleware
+- All subscription mutations trigger quota reset
+- Billing data persists in PostgreSQL; Paddle is source of truth for pricing/events
+
+---
+
+### v1.3 - Keycloak Role-Based Authorization (Planned)
 **Timeline**: Q3 2026
 
 - **Role mapping**: Check Keycloak `realm_access.roles` claims
@@ -165,7 +206,7 @@
 
 ---
 
-### v1.3 - Link Management Enhancements (IN PROGRESS)
+### v1.4 - Link Management Enhancements (IN PROGRESS)
 **Timeline**: Q3 2026 | **Completed**: 2026-07-06
 
 #### Completed Features
@@ -179,7 +220,7 @@
 - **Custom short codes** (alphanumeric, owner-created) — moved to backlog
 - **Draft/published states** (private links) — moved to backlog
 
-### v1.4 - Admin Dashboard (Planned)
+### v1.5 - Admin Dashboard (Planned)
 **Timeline**: Q3/Q4 2026
 
 - Web UI (React/Vue, separate repo)
@@ -188,7 +229,7 @@
 - User management: list, promote to admin
 - Rate limiting configuration
 
-### v1.5 - Rate Limiting (Planned)
+### v1.6 - Rate Limiting (Planned)
 **Timeline**: Q4 2026
 
 - Per-user rate limiting (Keycloak sub)
@@ -197,7 +238,7 @@
 - Metrics: current usage, reset time
 - Configurable thresholds
 
-### v1.6 - Observability (IN PROGRESS)
+### v1.7 - Observability (IN PROGRESS)
 **Timeline**: Q4 2026 / Q1 2027
 
 #### Completed (Metrics) ✅
@@ -214,7 +255,7 @@
 - Health check details (database, cache status, Keycloak status)
 - Alerting rules (example: cache down)
 
-### v1.7 - Multi-Database Support (Planned)
+### v1.8 - Multi-Database Support (Planned)
 **Timeline**: Q1 2027+
 
 - MySQL driver (in addition to PostgreSQL)
@@ -222,7 +263,7 @@
 - Database abstraction improvements
 - Connection pool configuration per DB
 
-### v1.8 - Keycloak Admin API Integration (Future)
+### v1.9 - Keycloak Admin API Integration (Future)
 **Timeline**: 2027+
 
 - User provisioning from Keycloak (bulk import)
@@ -387,6 +428,6 @@
 
 ---
 
-**Last Updated**: 2026-07-07 (v1.6 Metrics complete)  
-**Next Review**: 2026-07-30 (post v1.2 planning)  
+**Last Updated**: 2026-07-17 (v1.2 Billing + interval change + quota display fix complete)  
+**Next Review**: 2026-07-30 (post v1.2 final phase)  
 **Maintained by**: @TranTheTuan

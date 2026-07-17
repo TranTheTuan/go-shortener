@@ -80,7 +80,7 @@ func runServer() error {
 	// Wire dependencies: repository -> service -> handler.
 	userRepo := repository.NewUserRepository(db)
 	planRepo := repository.NewPlanRepository(db)
-	userSvc := service.NewUserService(userRepo, planRepo, cfg.Quota.DefaultPlanCode)
+	userSvc := service.NewUserService(userRepo, planRepo, cfg.Quota.DefaultPlanCode, cfg.Terms.CurrentVersion)
 
 	linkRepo := repository.NewLinkRepository(db)
 	clickRepo := repository.NewClickRepository(db)
@@ -189,7 +189,7 @@ func runServer() error {
 		Link:         handler.NewLinkHandler(linkSvc, analyticsSvc, dedupCache, cfg.Shortener.BaseURL),
 		Redirect:     handler.NewRedirectHandler(linkSvc, producer),
 		Auth:         handler.NewAuthHandler(userSvc),
-		Frontend:     handler.NewFrontendHandler(cfg.Keycloak.Issuer, cfg.Keycloak.ClientID, cfg.Paddle.ClientToken),
+		Frontend:     handler.NewFrontendHandler(cfg.Keycloak.Issuer, cfg.Keycloak.ClientID, cfg.Paddle.ClientToken, cfg.Terms.CurrentVersion),
 		BulkJob:      bulkHandler,
 		Webhook:      webhookHandler,
 		Subscription: subscriptionHandler,
