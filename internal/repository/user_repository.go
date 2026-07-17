@@ -6,8 +6,11 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
 	"time"
 
+	"github.com/TranTheTuan/go-shortener/pkg/apperror"
 	"gorm.io/gorm"
 )
 
@@ -23,13 +26,15 @@ var ErrConflict = errors.New("repository: conflict")
 // Identity is owned by Keycloak: KeycloakSub links a local row to a Keycloak
 // user (UUID `sub`), and users are JIT-provisioned on first authenticated call.
 type User struct {
-	ID          int64     `gorm:"primaryKey" json:"id"`
-	KeycloakSub *string   `gorm:"size:36;uniqueIndex" json:"-"` // Keycloak `sub`; nil for legacy rows
-	Username    string    `gorm:"size:255;uniqueIndex;not null" json:"username"`
-	Email       string    `gorm:"size:255;uniqueIndex;not null" json:"email"`
-	Name        *string   `gorm:"size:255" json:"name,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID              int64      `gorm:"primaryKey" json:"id"`
+	KeycloakSub     *string    `gorm:"size:36;uniqueIndex" json:"-"` // Keycloak `sub`; nil for legacy rows
+	Username        string     `gorm:"size:255;uniqueIndex;not null" json:"username"`
+	Email           string     `gorm:"size:255;uniqueIndex;not null" json:"email"`
+	Name            *string    `gorm:"size:255" json:"name,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	TermsAcceptedAt *time.Time `json:"terms_accepted_at,omitempty"`
+	TermsVersion    *string    `json:"terms_version,omitempty"`
 }
 
 // UserRepository defines the persistence operations for users.
@@ -46,6 +51,9 @@ type UserRepository interface {
 	Update(ctx context.Context, user *User) (*User, error)
 	// UpdatePaddleCustomerID sets the paddle_customer_id on a user row.
 	UpdatePaddleCustomerID(ctx context.Context, userID int64, customerID string) error
+	// UpdateTermsAccepted records terms acceptance for the user with targeted update.
+	// Sets both terms_accepted_at and terms_version atomically.
+	UpdateTermsAccepted(ctx context.Context, userID int64, version string, acceptedAt time.Time) error
 	List(ctx context.Context) ([]*User, error)
 }
 
@@ -156,6 +164,24 @@ func (r *userRepository) UpdatePaddleCustomerID(ctx context.Context, userID int6
 		Model(&User{}).
 		Where("id = ?", userID).
 		Update("paddle_customer_id", customerID).Error
+}
+
+// UpdateTermsAccepted records terms acceptance for the user with targeted update.
+// Sets both terms_accepted_at and terms_version atomically.
+func (r *userRepository) UpdateTermsAccepted(ctx context.Context, userID int64, version string, acceptedAt time.Time) error {
+	result := r.db.WithContext(ctx).Model(&User{}).
+		Where("id = ?", userID).
+		Updates(map[string]any{
+			"terms_accepted_at": acceptedAt,
+			"terms_version":     version,
+		})
+	if result.Error != nil {
+		return apperror.Internal(fmt.Errorf("repository: update terms accepted: %w", result.Error))
+	}
+	if result.RowsAffected == 0 {
+		return apperror.New(http.StatusNotFound, "USER_NOT_FOUND", "user not found")
+	}
+	return nil
 }
 
 // List returns all users ordered by ID.

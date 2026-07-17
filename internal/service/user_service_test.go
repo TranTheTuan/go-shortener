@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 
@@ -20,7 +21,7 @@ func basicPlanRepo() *mockPlanRepo {
 // newUserSvc builds a userService with a basic-plan repo for provisioning.
 func newUserSvc() (*mockUserRepo, UserService) {
 	repo := newMockUserRepo()
-	return repo, NewUserService(repo, basicPlanRepo(), "basic")
+	return repo, NewUserService(repo, basicPlanRepo(), "basic", "1.0")
 }
 
 func TestSyncFromKeycloak_CreatesOnFirstSight(t *testing.T) {
@@ -100,6 +101,58 @@ func TestSyncFromKeycloak_RejectsEmptyClaims(t *testing.T) {
 			_, err := svc.SyncFromKeycloak(context.Background(), in)
 			wantStatus(t, err, http.StatusUnauthorized)
 		})
+	}
+}
+
+func TestAcceptTerms_VersionMismatch(t *testing.T) {
+	repo, svc := newUserSvc()
+
+	// Create a user first
+	u, _ := svc.SyncFromKeycloak(context.Background(), SyncInput{Sub: "kc-1", Email: "a@b.com", Username: "alice"})
+
+	// Try to accept a different version
+	err := svc.AcceptTerms(context.Background(), u.ID, "2.0")
+	wantStatus(t, err, http.StatusBadRequest)
+
+	// Verify terms were NOT accepted
+	updated, _ := repo.GetByID(context.Background(), u.ID)
+	if updated.TermsVersion != nil {
+		t.Errorf("terms should not be accepted, but got version %s", *updated.TermsVersion)
+	}
+}
+
+func TestAcceptTerms_Success(t *testing.T) {
+	repo, svc := newUserSvc()
+
+	// Create a user first
+	u, _ := svc.SyncFromKeycloak(context.Background(), SyncInput{Sub: "kc-1", Email: "a@b.com", Username: "alice"})
+
+	// Accept terms with correct version
+	err := svc.AcceptTerms(context.Background(), u.ID, "1.0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify terms were accepted
+	updated, _ := repo.GetByID(context.Background(), u.ID)
+	if updated.TermsVersion == nil || *updated.TermsVersion != "1.0" {
+		t.Errorf("terms version = %v, want 1.0", updated.TermsVersion)
+	}
+	if updated.TermsAcceptedAt == nil {
+		t.Error("expected terms_accepted_at to be set")
+	}
+}
+
+func TestAcceptTerms_UserNotFound(t *testing.T) {
+	_, svc := newUserSvc()
+
+	// Try to accept terms for non-existent user
+	err := svc.AcceptTerms(context.Background(), 999, "1.0")
+	if err == nil {
+		t.Fatal("expected an error for non-existent user")
+	}
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Errorf("error = %v, want ErrNotFound", err)
 	}
 }
 

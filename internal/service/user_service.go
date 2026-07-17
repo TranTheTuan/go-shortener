@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -31,21 +32,26 @@ type UserService interface {
 	// SyncFromKeycloak maps a Keycloak identity to a local user, creating it on
 	// first sight and refreshing email/username when Keycloak's copy changed.
 	SyncFromKeycloak(ctx context.Context, in SyncInput) (*repository.User, error)
+	// AcceptTerms records user acceptance of the current T&C version.
+	// Returns 400 TERMS_VERSION_MISMATCH if the provided version doesn't match the current version.
+	AcceptTerms(ctx context.Context, userID int64, version string) error
 }
 
 // userService is the default UserService backed by a UserRepository. It also
 // provisions the initial subscription (default plan) for newly created users.
 type userService struct {
-	repo            repository.UserRepository
-	plans           repository.PlanRepository
-	defaultPlanCode string
-	now             func() time.Time
+	repo                repository.UserRepository
+	plans               repository.PlanRepository
+	defaultPlanCode     string
+	termsCurrentVersion string
+	now                 func() time.Time
 }
 
 // NewUserService wires a UserService to its repositories. defaultPlanCode is the
-// plan (e.g. "basic") assigned to a user on first provisioning.
-func NewUserService(repo repository.UserRepository, plans repository.PlanRepository, defaultPlanCode string) UserService {
-	return &userService{repo: repo, plans: plans, defaultPlanCode: defaultPlanCode, now: time.Now}
+// plan (e.g. "basic") assigned to a user on first provisioning. termsCurrentVersion
+// is the active T&C version that users must accept.
+func NewUserService(repo repository.UserRepository, plans repository.PlanRepository, defaultPlanCode, termsCurrentVersion string) UserService {
+	return &userService{repo: repo, plans: plans, defaultPlanCode: defaultPlanCode, termsCurrentVersion: termsCurrentVersion, now: time.Now}
 }
 
 // SyncFromKeycloak returns the local user for a Keycloak sub, provisioning it on
@@ -135,4 +141,21 @@ func (s *userService) ListUsers(ctx context.Context) ([]*repository.User, error)
 		return nil, apperror.Internal(fmt.Errorf("userService.ListUsers: %w", err))
 	}
 	return users, nil
+}
+
+// AcceptTerms records user acceptance of the current T&C version.
+func (s *userService) AcceptTerms(ctx context.Context, userID int64, version string) error {
+	// Validate that the client is accepting the current version
+	if version != s.termsCurrentVersion {
+		return apperror.New(http.StatusBadRequest, "TERMS_VERSION_MISMATCH",
+			fmt.Sprintf("expected version %s, got %s", s.termsCurrentVersion, version))
+	}
+
+	acceptedAt := s.now().UTC()
+	if err := s.repo.UpdateTermsAccepted(ctx, userID, version, acceptedAt); err != nil {
+		return err
+	}
+
+	slog.Debug("terms accepted", "user_id", userID, "version", version, "accepted_at", acceptedAt)
+	return nil
 }

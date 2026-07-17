@@ -36,6 +36,86 @@ const confirmDelete = (shortURL) => new Promise((resolve) => {
 });
 const off = (el, ev, fn) => el.removeEventListener(ev, fn);
 
+// checkTermsGate shows the T&C modal if the user hasn't accepted the current version.
+// Returns a Promise that resolves true if accepted, false if user closed without accepting.
+async function checkTermsGate(api, cfg, kc) {
+  const currentVersion = cfg.termsVersion;
+  const cached = localStorage.getItem("terms_version");
+
+  // Fast path: same user already accepted this version
+  if (cached === kc.subject + ":" + currentVersion) {
+    return true;
+  }
+
+  // Show modal and wait for user decision
+  return new Promise((resolve) => {
+    const modal = $("terms-modal");
+    const checkbox = $("terms-checkbox");
+    const acceptBtn = $("terms-accept-btn");
+    const declineBtn = $("terms-decline-btn");
+
+    // Enable accept button only when checkbox is ticked
+    checkbox.addEventListener("change", () => {
+      acceptBtn.disabled = !checkbox.checked;
+    });
+
+    // Accept handler
+    const onAccept = async () => {
+      try {
+        // Disable controls during submit
+        checkbox.disabled = true;
+        acceptBtn.disabled = true;
+        acceptBtn.textContent = "Accepting…";
+
+        // Send acceptance to backend
+        const res = await api("/api/terms/accept", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ version: currentVersion }),
+        });
+
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          throw new Error(json.error?.message || res.status);
+        }
+
+        // Cache the acceptance
+        localStorage.setItem("terms_version", kc.subject + ":" + currentVersion);
+
+        // Clean up and resolve
+        cleanup();
+        resolve(true);
+      } catch (e) {
+        alert("Failed to accept terms: " + e.message);
+        // Re-enable controls and keep modal open for retry
+        checkbox.disabled = false;
+        acceptBtn.disabled = !checkbox.checked;
+        acceptBtn.textContent = "Accept & Continue";
+      }
+    };
+
+    // Decline handler
+    const onDecline = () => {
+      cleanup();
+      kc.logout({ redirectUri: location.origin + "/" });
+    };
+
+    const cleanup = () => {
+      modal.hidden = true;
+      checkbox.checked = false;
+      acceptBtn.disabled = true;
+      acceptBtn.textContent = "Accept & Continue";
+      acceptBtn.removeEventListener("click", onAccept);
+      declineBtn.removeEventListener("click", onDecline);
+    };
+
+    // Show modal and wire handlers
+    modal.hidden = false;
+    acceptBtn.addEventListener("click", onAccept);
+    declineBtn.addEventListener("click", onDecline);
+  });
+}
+
 async function main() {
   let cfg;
   try {
@@ -61,6 +141,22 @@ async function main() {
 
   text("status", "");
   if (authenticated) {
+    // Define api helper early for checkTermsGate
+    let kc_temp = kc;
+    const api_temp = async (path, opts = {}) => {
+      await kc_temp.updateToken(30);
+      return fetch(path, {
+        ...opts,
+        headers: { ...(opts.headers || {}), Authorization: "Bearer " + kc_temp.token },
+      });
+    };
+
+    // Check T&C gate before rendering app
+    if (!(await checkTermsGate(api_temp, cfg, kc))) {
+      // User rejected or closed modal; don't render app
+      text("status", "You must accept the Terms of Service to use this service.");
+      return;
+    }
     renderSignedIn(kc, cfg);
   } else {
     renderSignedOut(kc);

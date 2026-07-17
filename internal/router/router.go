@@ -73,7 +73,7 @@ func New(h Handlers, deps Deps) *echo.Echo {
 // health/metrics are infra noise.
 func skipTrace(routePath string) bool {
 	switch routePath {
-	case "/:code", "/healthz", "/metrics", "/static*", "/swagger/*", "/app-config.json":
+	case "/:code", "/healthz", "/metrics", "/static*", "/terms*", "/swagger/*", "/app-config.json":
 		return true
 	default:
 		return false
@@ -91,6 +91,7 @@ func registerRoutes(e *echo.Echo, h Handlers, deps Deps) {
 	// callback query, which keycloak-js parses client-side.
 	e.FileFS("/", "index.html", web.Files)
 	e.StaticFS("/static", echo.MustSubFS(web.Files, "static"))
+	e.StaticFS("/terms", echo.MustSubFS(web.Files, "terms"))
 	e.GET("/app-config.json", h.Frontend.Config)
 
 	// Authentication is owned by Keycloak; this service only validates tokens.
@@ -109,6 +110,7 @@ func registerRoutes(e *echo.Echo, h Handlers, deps Deps) {
 	// Link management — authenticated by a Keycloak access token; the token's
 	// user owns the links and is subject to the daily quota.
 	api := e.Group("/api", keycloakMW)
+	api.POST("/terms/accept", h.Auth.AcceptTerms, keycloakMW)
 	links := api.Group("/links")
 	// Create chain: dedup fast-path → quota check → handler.
 	links.POST("", h.Link.Create, appmw.DuplicateURLCheck(deps.Dedup), appmw.QuotaCheck(deps.Quota))

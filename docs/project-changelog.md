@@ -5,6 +5,21 @@ All notable changes to the go-shortener project are documented here.
 ## [Unreleased]
 
 ### Added
+- **Terms & Conditions Acceptance Gate** — Versioned T&C acceptance with modal UX
+  - DB migration: `user_agreements` table tracks per-user acceptance (user_id, version, accepted_at)
+  - Backend endpoint `POST /api/agreements/accept/{version}` for acceptance tracking
+  - Versioning: Billing rule changes bump T&C version; users re-accept on login if they haven't accepted latest
+  - Modal UI: Shows current T&C version, decline option closes app, accept records timestamp
+  - Unauthenticated users see T&C on first login; subsequent logins skip if version unchanged
+  - Integration: Runs before subscription/billing operations; required for accessing billing features
+
+- **Billing: Plan + Interval Change** — Allow users to change subscription tier AND billing interval (monthly ↔ yearly)
+  - Renamed `UpgradeSubscription` → `ChangeSubscription` service method
+  - Endpoint `POST /api/subscription/upgrade` now accepts `{plan_id, interval}` (was plan_id only)
+  - Validation: downgrades blocked; same-tier + different-interval allowed; same tier + same interval rejected as no-op
+  - Frontend: Button logic updated to show "Switch to yearly/monthly" for same-plan interval changes
+  - Frontend: activeInterval toggle now initializes from current subscription (was hardcoded to monthly)
+
 - **Link Management (CRUD)** — Owner-only link management with hard delete, enable/disable, and expiry editing
   - `DELETE /api/links/:code` — Hard delete (cascades clicks, returns 204)
   - `PUT /api/links/:code` — Update mutable state: `{expires_at: RFC3339|null, is_active: bool}` (returns 200)
@@ -14,9 +29,10 @@ All notable changes to the go-shortener project are documented here.
   - Frontend: Status badges (active/disabled/expired), row actions (Enable/Disable, edit expiry, Delete), status filter dropdown
   - Cache invalidation on all mutations; dedup cache evicted on delete
 
-### Security
-- Owner-only authorization on all link mutations (404 for non-owner/missing/unowned links)
-- Keycloak OIDC authentication required for link management endpoints
+### Fixed
+- **Quota Display Bug** — Business plan showed "9223372036854776000 links remaining" instead of "Unlimited"
+  - Root cause: Frontend checked for 32-bit max (2147483647) but service returns 64-bit max (math.MaxInt = 9223372036854775807)
+  - Fix: Update quota check to use 64-bit max threshold with `>=` guard
 
 ### Notes
 - Swagger/OpenAPI docs pending regeneration (`make swag` not yet run)

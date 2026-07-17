@@ -27,7 +27,7 @@ func TestParseIssuer(t *testing.T) {
 
 func TestFrontendHandler_Config(t *testing.T) {
 	e := echo.New()
-	h := NewFrontendHandler("http://auth.cd.me/realms/nine-realms", "go-shortener", "")
+	h := NewFrontendHandler("http://auth.cd.me/realms/nine-realms", "go-shortener", "", "1.0")
 
 	req := httptest.NewRequest(http.MethodGet, "/app-config.json", nil)
 	rec := httptest.NewRecorder()
@@ -39,7 +39,7 @@ func TestFrontendHandler_Config(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if got.AuthURL != "http://auth.cd.me" || got.Realm != "nine-realms" || got.ClientID != "go-shortener" {
+	if got.AuthURL != "http://auth.cd.me" || got.Realm != "nine-realms" || got.ClientID != "go-shortener" || got.TermsVersion != "1.0" {
 		t.Errorf("config = %+v", got)
 	}
 }
@@ -48,7 +48,7 @@ func TestFrontendHandler_Config(t *testing.T) {
 // the /:code redirect catch-all (a real short code still reaches the catch-all).
 func TestFrontendRouting(t *testing.T) {
 	e := echo.New()
-	h := NewFrontendHandler("http://auth.cd.me/realms/nine-realms", "go-shortener", "")
+	h := NewFrontendHandler("http://auth.cd.me/realms/nine-realms", "go-shortener", "", "1.0")
 	e.FileFS("/", "index.html", web.Files)
 	e.StaticFS("/static", echo.MustSubFS(web.Files, "static"))
 	e.GET("/app-config.json", h.Config)

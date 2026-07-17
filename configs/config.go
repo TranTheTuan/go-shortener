@@ -25,6 +25,7 @@ type Config struct {
 	R2        R2Config        `envPrefix:"R2_"`
 	Tracing   TracingConfig   `envPrefix:"TRACING_"`
 	Paddle    PaddleConfig    `envPrefix:"PADDLE_"`
+	Terms     TermsConfig     `envPrefix:"TERMS_"`
 	// ServiceVersion tags traces/metrics with the running build (git sha),
 	// injected at deploy. Defaults to "dev" for local runs.
 	ServiceVersion string `env:"SERVICE_VERSION" envDefault:"dev"`
@@ -38,6 +39,13 @@ type PaddleConfig struct {
 	APIKey        string `env:"API_KEY"`        // server-side API key for portal sessions
 	ClientToken   string `env:"CLIENT_TOKEN"`   // client-side token for Paddle.js
 	BaseURL       string `env:"BASE_URL" envDefault:"https://vendors.paddle.com/api/2.0"`
+}
+
+// TermsConfig holds Terms & Conditions versioning.
+type TermsConfig struct {
+	// CurrentVersion is the active T&C version. Bump this to force users to re-accept.
+	// Format: semantic version string (e.g., "1.0", "2.1"). Injected into /app-config.json.
+	CurrentVersion string `env:"VERSION" envDefault:"1.0"`
 }
 
 // TracingConfig holds OpenTelemetry trace-export settings. Disabled by default

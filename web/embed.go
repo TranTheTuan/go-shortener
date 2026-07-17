@@ -4,8 +4,8 @@ package web
 
 import "embed"
 
-// Files holds the frontend: index.html plus the static/ directory (app.js,
-// styles.css, the vendored keycloak-js adapter).
+// Files holds the frontend: index.html plus the static/ and terms/ directories
+// (app.js, styles.css, the vendored keycloak-js adapter, and T&C pages).
 //
-//go:embed index.html error.html static
+//go:embed index.html error.html static terms/v1.html
 var Files embed.FS

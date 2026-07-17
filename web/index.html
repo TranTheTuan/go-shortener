@@ -28,6 +28,35 @@
     <button id="signin" class="primary">Sign in with Keycloak</button>
   </main>
 
+  <!-- Terms & Conditions acceptance modal (shown between auth + app render) -->
+  <div id="terms-modal" class="modal-backdrop" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Terms of Service</h2>
+      </div>
+      <div class="modal-body">
+        <p>Before you continue, please read and accept our Terms of Service.</p>
+        <p>Key points:</p>
+        <ul>
+          <li><strong>Upgrades only</strong> — you cannot downgrade plans</li>
+          <li><strong>No refunds</strong> — interval changes and cancellations are non-refundable</li>
+          <li><strong>Billing interval</strong> — switch between monthly and yearly (unused credit applies as store credit)</li>
+          <li><strong>Cancellation</strong> — managed via Paddle Customer Portal; access reverts to Basic plan</li>
+        </ul>
+        <p><a href="/terms/v1.html" target="_blank" rel="noopener">Read full Terms of Service →</a></p>
+
+        <label style="margin-top: 1.5rem; display: flex; align-items: center;">
+          <input type="checkbox" id="terms-checkbox" />
+          <span style="margin-left: 0.5rem;">I have read and agree to the Terms of Service</span>
+        </label>
+      </div>
+      <div class="modal-footer">
+        <button id="terms-decline-btn" class="secondary">I Decline</button>
+        <button id="terms-accept-btn" class="primary" disabled>Accept & Continue</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Signed-in: production app shell (sidebar nav + switchable views) -->
   <div id="app" class="shell" hidden>
     <aside class="sidebar">
