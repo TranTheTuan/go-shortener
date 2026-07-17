@@ -29,8 +29,9 @@ type BillingService interface {
 	CurrentPlan(ctx context.Context, userID int64) (*repository.Plan, *repository.Subscription, error)
 	// GeneratePortalURL creates a Paddle Customer Portal session URL for the given customer.
 	GeneratePortalURL(ctx context.Context, paddleCustomerID string) (string, error)
-	// UpgradeSubscription switches an existing subscription to a higher-tier plan, same billing interval.
-	UpgradeSubscription(ctx context.Context, userID int64, planID int64) error
+	// ChangeSubscription switches plan tier and/or billing interval.
+	// Downgrades (lower tier) are rejected; interval changes are unrestricted.
+	ChangeSubscription(ctx context.Context, userID int64, planID int64, interval string) error
 }
 
 type billingService struct {
@@ -259,7 +260,7 @@ var planRank = map[string]int{
 	"business": 2,
 }
 
-func (s *billingService) UpgradeSubscription(ctx context.Context, userID int64, planID int64) error {
+func (s *billingService) ChangeSubscription(ctx context.Context, userID int64, planID int64, interval string) error {
 	currentPlan, sub, err := s.CurrentPlan(ctx, userID)
 	if err != nil {
 		return err
@@ -278,16 +279,22 @@ func (s *billingService) UpgradeSubscription(ctx context.Context, userID int64, 
 
 	currentRank, currentOk := planRank[currentPlan.Code]
 	targetRank, targetOk := planRank[targetPlan.Code]
-	if !currentOk || !targetOk || targetRank <= currentRank {
-		return apperror.New(400, "INVALID_UPGRADE", "must upgrade to a higher tier plan")
+	if !currentOk || !targetOk || targetRank < currentRank {
+		return apperror.New(400, "INVALID_UPGRADE", "cannot downgrade plan tier")
 	}
 
-	// Resolve the correct Paddle price ID based on the current billing interval.
+	if interval != "month" && interval != "year" {
+		return apperror.New(400, "INVALID_INTERVAL", fmt.Sprintf("interval must be month or year, got %q", interval))
+	}
 	if sub.BillingInterval == nil {
 		return apperror.New(400, "INVALID_SUBSCRIPTION", "current subscription has no billing interval")
 	}
+	if targetPlan.ID == currentPlan.ID && interval == *sub.BillingInterval {
+		return apperror.New(400, "NO_CHANGE", "plan and interval are already set to the requested values")
+	}
+
 	var priceID string
-	switch *sub.BillingInterval {
+	switch interval {
 	case "month":
 		if targetPlan.PaddlePriceIDMonthly == nil {
 			return apperror.New(400, "UNAVAILABLE", "target plan is not available with monthly billing")
@@ -298,8 +305,6 @@ func (s *billingService) UpgradeSubscription(ctx context.Context, userID int64, 
 			return apperror.New(400, "UNAVAILABLE", "target plan is not available with yearly billing")
 		}
 		priceID = *targetPlan.PaddlePriceIDYearly
-	default:
-		return apperror.New(400, "INVALID_SUBSCRIPTION", fmt.Sprintf("unknown billing interval %q", *sub.BillingInterval))
 	}
 
 	customData := map[string]any{"user_id": userID}

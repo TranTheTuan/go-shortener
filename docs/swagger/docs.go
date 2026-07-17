@@ -715,10 +715,10 @@ const docTemplate = `{
                 "tags": [
                     "billing"
                 ],
-                "summary": "Upgrade active subscription to a higher-tier plan (same billing interval)",
+                "summary": "Change active subscription plan tier and/or billing interval",
                 "parameters": [
                     {
-                        "description": "plan_id to upgrade to",
+                        "description": "plan_id and interval",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -735,7 +735,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "no subscription, invalid plan, or same/lower tier",
+                        "description": "no subscription, invalid plan, no change, or downgrade",
                         "schema": {
                             "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
                         }
@@ -1229,6 +1229,9 @@ const docTemplate = `{
         "internal_handler.upgradeRequest": {
             "type": "object",
             "properties": {
+                "interval": {
+                    "type": "string"
+                },
                 "plan_id": {
                     "type": "integer"
                 }

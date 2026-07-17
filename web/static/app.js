@@ -634,7 +634,7 @@ function wireBilling(api, paddleClientToken) {
 
     const quota = document.createElement("div");
     quota.className = "plan-quota";
-    quota.textContent = quotaRemaining === 2147483647
+    quota.textContent = quotaRemaining >= 9223372036854775807
       ? "Unlimited links remaining today"
       : `${quotaRemaining} link${quotaRemaining !== 1 ? "s" : ""} remaining today`;
 
@@ -682,14 +682,14 @@ function wireBilling(api, paddleClientToken) {
     const grid = $("plan-grid");
     grid.innerHTML = "";
     const currentCode = data.plan?.code ?? "basic";
-    const currentInterval = data.subscription?.billing_interval ?? "monthly";
+    const currentInterval = (data.subscription?.billing_interval ?? "month") === "year" ? "year" : "month";
     const paddleCustomerId = data.subscription?.paddle_customer_id ?? null;
     const paddleSubscriptionId = data.subscription?.paddle_subscription_id ?? null;
     const userId = data.subscription?.user_id ?? null;
 
     const toggle = document.createElement("div");
     toggle.className = "interval-toggle";
-    let activeInterval = "monthly";
+    let activeInterval = currentInterval === "year" ? "yearly" : "monthly";
 
     ["monthly", "yearly"].forEach((iv) => {
       const btn = document.createElement("button");
@@ -713,6 +713,7 @@ function wireBilling(api, paddleClientToken) {
 
     function renderCards(iv) {
       cardsContainer.innerHTML = "";
+      const apiInterval = iv === "yearly" ? "year" : "month";
       for (const plan of plans) {
         if (plan.code === "basic") continue;
         const meta = PLAN_META[plan.code] ?? { desc: "", features: [] };
@@ -749,32 +750,43 @@ function wireBilling(api, paddleClientToken) {
         }
 
         const btn = document.createElement("button");
-        const isCurrent = plan.code === currentCode;
+        const isCurrent = plan.code === currentCode && apiInterval === currentInterval;
         const isDowngrade = (PLAN_RANK[plan.code] ?? 0) < (PLAN_RANK[currentCode] ?? 0);
+        const isSamePlanDiffInterval = plan.code === currentCode && apiInterval !== currentInterval;
+
         btn.className = isCurrent ? "plan-btn plan-btn-current" : "plan-btn primary";
-        btn.disabled = isCurrent || isDowngrade;
-        btn.textContent = isCurrent ? "Current plan" : isDowngrade ? "Downgrade not supported" : "Upgrade";
+        btn.disabled = isDowngrade;
+        btn.textContent = isDowngrade
+          ? "Downgrade not supported"
+          : isCurrent
+            ? "Current plan"
+            : isSamePlanDiffInterval
+              ? (iv === "yearly" ? "Switch to yearly" : "Switch to monthly")
+              : "Upgrade";
+
         if (!isCurrent && !isDowngrade) {
           if (paddleSubscriptionId) {
             btn.onclick = async () => {
               btn.disabled = true;
-              btn.textContent = "Upgrading…";
+              btn.textContent = isSamePlanDiffInterval ? "Switching…" : "Upgrading…";
               try {
                 const res = await api("/api/subscription/upgrade", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ plan_id: plan.id }),
+                  body: JSON.stringify({ plan_id: plan.id, interval: apiInterval }),
                 });
                 if (!res.ok) {
                   const json = await res.json().catch(() => ({}));
                   throw new Error(json.error?.message || res.status);
                 }
-                btn.textContent = "Upgraded!";
+                btn.textContent = isSamePlanDiffInterval ? "Switched!" : "Upgraded!";
                 btn.disabled = true;
               } catch (e) {
-                alert("Upgrade failed: " + e.message);
+                alert((isSamePlanDiffInterval ? "Switch" : "Upgrade") + " failed: " + e.message);
                 btn.disabled = false;
-                btn.textContent = "Upgrade";
+                btn.textContent = isSamePlanDiffInterval
+                  ? (iv === "yearly" ? "Switch to yearly" : "Switch to monthly")
+                  : "Upgrade";
               }
             };
           } else {
