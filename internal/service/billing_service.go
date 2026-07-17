@@ -100,6 +100,7 @@ func (s *billingService) handleSubscriptionCreated(ctx context.Context, data pad
 		return err
 	}
 
+	periodStart := s.periodStartFromNotification(data.CurrentBillingPeriod)
 	periodEnd := s.periodEndFromNotification(data.CurrentBillingPeriod)
 	paddleSubID := data.ID
 	paddleCustID := data.CustomerID
@@ -109,7 +110,7 @@ func (s *billingService) handleSubscriptionCreated(ctx context.Context, data pad
 		UserID:               userID,
 		PlanID:               planID,
 		Status:               status,
-		CurrentPeriodStart:   time.Now().UTC(),
+		CurrentPeriodStart:   periodStart,
 		CurrentPeriodEnd:     periodEnd,
 		PaddleSubscriptionID: &paddleSubID,
 		PaddleCustomerID:     &paddleCustID,
@@ -170,7 +171,7 @@ func (s *billingService) handleSubscriptionUpdated(ctx context.Context, data pad
 		BillingInterval:      &interval,
 		Status:               status,
 		CurrentPeriodEnd:     periodEnd,
-		CurrentPeriodStart:   *periodStart,
+		CurrentPeriodStart:   periodStart,
 		CanceledAt:           canceledAt,
 	}
 	if _, err := s.subs.UpsertByPaddleID(ctx, sub); err != nil {
@@ -279,15 +280,15 @@ func (s *billingService) periodEndFromNotification(p *paddlenotification.TimePer
 }
 
 // periodStartFromNotification extracts period start from a TimePeriod pointer (nil-safe).
-func (s *billingService) periodStartFromNotification(p *paddlenotification.TimePeriod) *time.Time {
+func (s *billingService) periodStartFromNotification(p *paddlenotification.TimePeriod) time.Time {
 	if p == nil || p.StartsAt == "" {
-		return nil
+		return time.Now().UTC()
 	}
 	t, err := time.Parse(time.RFC3339, p.StartsAt)
 	if err != nil {
-		return nil
+		return time.Now().UTC()
 	}
-	return &t
+	return t
 }
 
 // userIDFromCustomData extracts the user_id passed during Paddle Checkout.
