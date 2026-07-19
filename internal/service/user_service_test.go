@@ -11,7 +11,7 @@ import (
 
 // basicPlanRepo returns a plan repo seeded with the default "basic" plan.
 func basicPlanRepo() *mockPlanRepo {
-	plan := &repository.Plan{ID: 1, Code: "basic", DailyLinkQuota: 10}
+	plan := &repository.Plan{ID: 1, Code: "basic", MonthlyLinkQuota: 10}
 	return &mockPlanRepo{
 		byCode: map[string]*repository.Plan{"basic": plan},
 		byID:   map[int64]*repository.Plan{1: plan},

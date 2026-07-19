@@ -24,23 +24,23 @@ func (UnlimitedQuota) Release(_ context.Context, _ int64)             {}
 func (UnlimitedQuota) Reset(_ context.Context, _ int64)               {}
 func (UnlimitedQuota) Remaining(_ context.Context, _ int64) int       { return math.MaxInt }
 
-// quotaKeyTTL is how long a daily quota key lives. The calendar date is part of
-// the key, so this is only cleanup; it just needs to outlast the UTC day.
-const quotaKeyTTL = 48 * time.Hour
+// quotaKeyTTL is how long a monthly quota key lives. The calendar month is part of
+// the key, so this is only cleanup; it just needs to outlast the UTC month.
+const quotaKeyTTL = 35 * 24 * time.Hour
 
-// QuotaService enforces a per-user daily link-creation quota using an atomic
-// Redis counter keyed by the UTC calendar day. All Redis access is behind a
+// QuotaService enforces a per-user monthly link-creation quota using an atomic
+// Redis counter keyed by the UTC calendar month. All Redis access is behind a
 // circuit breaker and fails open (allow) on any Redis trouble.
 type QuotaService interface {
 	// Allow atomically records one creation and reports whether the user is
-	// still within their daily limit. On Redis failure it fails open (true).
+	// still within their monthly limit. On Redis failure it fails open (true).
 	Allow(ctx context.Context, userID int64) (bool, error)
 	// Release refunds one slot (e.g. the create failed or was a dedup no-op).
 	Release(ctx context.Context, userID int64)
-	// Reset sets the day's counter to 0 while preserving the key TTL.
+	// Reset sets the month's counter to 0 while preserving the key TTL.
 	// Called on plan upgrade so the new higher limit takes effect immediately.
 	Reset(ctx context.Context, userID int64)
-	// Remaining returns slots left today. Fails open (math.MaxInt) on Redis unavailable.
+	// Remaining returns slots left this month. Fails open (math.MaxInt) on Redis unavailable.
 	Remaining(ctx context.Context, userID int64) int
 }
 
@@ -75,40 +75,40 @@ func NewQuotaService(
 	}
 }
 
-// key is user:quota:{userID}:{UTC-date}.
+// key is user:quota:{userID}:{UTC-month}.
 func (s *quotaService) key(userID int64) string {
-	return fmt.Sprintf("user:quota:%d:%s", userID, s.now().UTC().Format("2006-01-02"))
+	return fmt.Sprintf("user:quota:%d:%s", userID, s.now().UTC().Format("2006-01"))
 }
 
-// DailyLimit resolves the user's daily quota: their active subscription's plan,
+// MonthlyLimit resolves the user's monthly quota: their active subscription's plan,
 // else the default plan, else the configured fallback limit.
-func (s *quotaService) DailyLimit(ctx context.Context, userID int64) int {
+func (s *quotaService) MonthlyLimit(ctx context.Context, userID int64) int {
 	if sub, err := s.subs.GetActiveByUserID(ctx, userID); err == nil {
 		if plan, perr := s.plans.GetByID(ctx, sub.PlanID); perr == nil {
-			if plan.DailyLinkQuota == -1 {
+			if plan.MonthlyLinkQuota == -1 {
 				return math.MaxInt // unlimited plan
 			}
-			return plan.DailyLinkQuota
+			return plan.MonthlyLinkQuota
 		} else {
 			slog.Warn("quota: active subscription plan lookup failed; falling back to default plan",
 				"user_id", userID, "plan_id", sub.PlanID, "error", perr)
 		}
 	}
 	if plan, err := s.plans.GetByCode(ctx, s.defaultPlanCode); err == nil {
-		if plan.DailyLinkQuota == -1 {
+		if plan.MonthlyLinkQuota == -1 {
 			return math.MaxInt
 		}
-		return plan.DailyLinkQuota
+		return plan.MonthlyLinkQuota
 	}
 	slog.Warn("quota: falling back to configured limit (plan lookup failed)", "user_id", userID)
 	return s.fallbackLimit
 }
 
-// Allow increments the day's counter and compares against the limit. Over the
-// limit it refunds the increment (so a mid-day upgrade isn't blocked) and
+// Allow increments the month's counter and compares against the limit. Over the
+// limit it refunds the increment (so a mid-month upgrade isn't blocked) and
 // returns false. On Redis failure it logs and fails open.
 func (s *quotaService) Allow(ctx context.Context, userID int64) (bool, error) {
-	limit := s.DailyLimit(ctx, userID)
+	limit := s.MonthlyLimit(ctx, userID)
 	key := s.key(userID)
 
 	res, err := s.breaker.Do(func() (any, error) {
@@ -149,11 +149,11 @@ func (s *quotaService) Reset(ctx context.Context, userID int64) {
 	})
 }
 
-// Remaining returns the number of link-creation slots left today.
+// Remaining returns the number of link-creation slots left this month.
 // Fails open (math.MaxInt) when Redis is unavailable so quota issues never
 // hard-block users.
 func (s *quotaService) Remaining(ctx context.Context, userID int64) int {
-	limit := s.DailyLimit(ctx, userID)
+	limit := s.MonthlyLimit(ctx, userID)
 	if limit == math.MaxInt {
 		return math.MaxInt // unlimited plan — skip Redis lookup
 	}
