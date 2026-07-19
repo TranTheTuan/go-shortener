@@ -79,7 +79,7 @@ func makeSubCanceledRaw(subID, custID string) []byte {
 func TestBillingService_HandleEvent_SubscriptionCreated(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	proPlan := &repository.Plan{ID: 2, Code: "pro", DailyLinkQuota: 500, PaddlePriceIDMonthly: strPtr("pri_pro_monthly")}
+	proPlan := &repository.Plan{ID: 2, Code: "pro", MonthlyLinkQuota: 500, PaddlePriceIDMonthly: strPtr("pri_pro_monthly")}
 
 	plans := mocksrepository.NewMockPlanRepository(ctrl)
 	plans.EXPECT().GetByPaddlePriceID(gomock.Any(), "pri_pro_monthly").Return(proPlan, nil)
@@ -148,7 +148,7 @@ func TestBillingService_HandleEvent_SubscriptionCanceled_SetsCanceledAt(t *testi
 func TestBillingService_CurrentPlan_DefaultsToBasic(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	basicPlan := &repository.Plan{ID: 1, Code: "basic", DailyLinkQuota: 10}
+	basicPlan := &repository.Plan{ID: 1, Code: "basic", MonthlyLinkQuota: 10}
 
 	subs := mocksrepository.NewMockSubscriptionRepository(ctrl)
 	subs.EXPECT().GetActiveByUserID(gomock.Any(), int64(999)).Return(nil, repository.ErrNotFound)

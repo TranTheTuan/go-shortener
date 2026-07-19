@@ -107,11 +107,11 @@ func (k KafkaConfig) Enabled() bool { return len(k.Brokers) > 0 }
 // SASLEnabled reports whether SASL authentication is configured.
 func (k KafkaConfig) SASLEnabled() bool { return k.SASLMechanism != "" }
 
-// QuotaConfig holds daily-link-quota settings.
+// QuotaConfig holds monthly-link-quota settings.
 type QuotaConfig struct {
 	// DefaultPlanCode is the plan applied when a user has no active subscription.
 	DefaultPlanCode string `env:"DEFAULT_PLAN_CODE" envDefault:"basic"`
-	// BasicFallbackLimit is the last-resort daily limit when the plans table is
+	// BasicFallbackLimit is the last-resort monthly limit when the plans table is
 	// unreachable, so a DB hiccup never blocks creation outright.
 	BasicFallbackLimit int `env:"BASIC_FALLBACK_LIMIT" envDefault:"10"`
 	// BreakerMaxFailures is the number of consecutive Redis failures that trips

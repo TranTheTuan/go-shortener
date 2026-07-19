@@ -14,7 +14,7 @@ type Plan struct {
 	ID                   int64     `gorm:"primaryKey" json:"id"`
 	Code                 string    `gorm:"size:50;uniqueIndex;not null" json:"code"`
 	Name                 string    `gorm:"size:255;not null" json:"name"`
-	DailyLinkQuota       int       `gorm:"not null" json:"daily_link_quota"`
+	MonthlyLinkQuota     int       `gorm:"not null" json:"monthly_link_quota"`
 	PriceCents           int       `gorm:"not null;default:0" json:"price_cents"`
 	IsActive             bool      `gorm:"not null;default:true" json:"is_active"`
 	PaddlePriceIDMonthly *string   `gorm:"size:255" json:"paddle_price_id_monthly,omitempty"`

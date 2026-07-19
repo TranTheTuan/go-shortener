@@ -731,8 +731,8 @@ function wireBilling(api, paddleClientToken) {
     const quota = document.createElement("div");
     quota.className = "plan-quota";
     quota.textContent = quotaRemaining >= 9223372036854775807
-      ? "Unlimited links remaining today"
-      : `${quotaRemaining} link${quotaRemaining !== 1 ? "s" : ""} remaining today`;
+      ? "Unlimited links remaining this month"
+      : `${quotaRemaining} link${quotaRemaining !== 1 ? "s" : ""} remaining this month`;
 
     header.append(nameWrap, quota);
     card.append(header);
