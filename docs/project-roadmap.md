@@ -156,7 +156,7 @@
 ## Upcoming Work (Post v1.1)
 
 ### v1.2 - Billing & Subscription Management (IN PROGRESS) — 2026-07-17
-**Status**: 60% Complete | **Current Branch**: `master`
+**Status**: 70% Complete | **Current Branch**: `master`
 
 #### Completed ✅
 - ✅ **Paddle integration**: Subscription lifecycle webhooks (`subscription.created/updated/canceled`)
@@ -175,13 +175,23 @@
   - Version bump triggers re-acceptance on next login
   - Modal UI with decline/accept options
   - Integrated with billing feature access
+- ✅ **Advanced Analytics with Tiered Feature Gating** — Timeseries, referrer, device analytics gated by subscription
+  - 4 new rollup tables: `click_stats_daily`, `click_stats_referrer`, `click_stats_device`, `plan_features`
+  - Pro/Business plans seeded with `analytics.timeseries`, `analytics.referrers`, `analytics.devices` flags; Basic plan has none
+  - `pkg/useragent` parser: Device category (Desktop, Mobile, Tablet, Bot)
+  - `pkg/referrer` parser: Extract referrer domain at write-time
+  - `EntitlementService`: Resolves user→plan→feature flag
+  - Rollup writes in Kafka consumer: parse UA/referrer, upsert daily/referrer/device aggregates
+  - `GET /api/links/:code/analytics?range=7d|30d|90d`: Owner-scoped, feature-gated endpoint (401 non-owner, 403 no entitlement)
+  - Frontend: Chart.js charts (Pro/Business); upgrade prompt (Basic)
 - ✅ **API endpoints**: 
   - `GET /api/plans` — List plans with Paddle pricing (monthly/yearly)
   - `GET /api/subscription` — Current plan + quota remaining + renewal date
   - `POST /api/subscription/upgrade` — Plan change with interval (no downgrade, prorated immediately)
   - `GET /api/subscription/portal` — Paddle Customer Portal redirect
   - `POST /api/agreements/accept/{version}` — Accept T&C version
-- ✅ **UI components**: Plan comparison grid, billing interval toggle, subscription card, quota display, T&C modal
+  - `GET /api/links/:code/analytics` — Advanced analytics (Pro/Business only)
+- ✅ **UI components**: Plan comparison grid, billing interval toggle, subscription card, quota display, T&C modal, analytics charts
 
 #### Planned (v1.2 Phase 2)
 - [ ] Invoice/receipt history (`GET /api/subscription/invoices`)
@@ -428,6 +438,6 @@
 
 ---
 
-**Last Updated**: 2026-07-17 (v1.2 Billing + interval change + quota display fix complete)  
-**Next Review**: 2026-07-30 (post v1.2 final phase)  
+**Last Updated**: 2026-07-21 (v1.2 Advanced Analytics + Tiered Feature Gating complete)  
+**Next Review**: 2026-08-04 (post v1.2 final phase)  
 **Maintained by**: @TranTheTuan

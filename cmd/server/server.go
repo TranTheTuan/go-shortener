@@ -91,7 +91,12 @@ func runServer() error {
 		cfg.Shortener.L1CacheSize, cfg.Shortener.L1CacheTTL,
 	)
 	linkSvc := service.NewLinkService(linkRepo, linkCacheRepo, cfg.Shortener.CodeLength, cfg.Shortener.CacheTTL)
-	analyticsSvc := service.NewAnalyticsService(linkRepo, clickRepo)
+
+	clickStatsRepo := repository.NewClickStatsRepository(db)
+	planFeatureRepo := repository.NewPlanFeatureRepository(db)
+	subRepo := repository.NewSubscriptionRepository(db)
+	entitlementSvc := service.NewEntitlementService(planFeatureRepo, subRepo, planRepo, cfg.Quota.DefaultPlanCode)
+	analyticsSvc := service.NewAnalyticsService(linkRepo, clickRepo, clickStatsRepo, entitlementSvc)
 
 	// Wire the click producer: Kafka when brokers are configured, inline fallback otherwise.
 	var producer events.ClickProducer
@@ -113,7 +118,6 @@ func runServer() error {
 	// Quota + per-owner dedup: Redis access guarded by a circuit breaker.
 	breaker := redisbreaker.New(cfg.Quota.BreakerMaxFailures, cfg.Quota.BreakerOpenTimeout)
 	dedupCache := service.NewDedupCache(rdb, breaker, cfg.Shortener.CacheTTL)
-	subRepo := repository.NewSubscriptionRepository(db)
 	quotaSvc := service.NewQuotaService(rdb, breaker, planRepo, subRepo, cfg.Quota.DefaultPlanCode, cfg.Quota.BasicFallbackLimit)
 
 	// Metrics: OTel MeterProvider + Prometheus exporter, served on a dedicated

@@ -163,6 +163,7 @@ make migrate-version                         # print the current version
 | POST   | `/api/links`              | Keycloak JWT | Create a short link (owned by the token's user; subject to daily quota) |
 | GET    | `/api/links`              | Keycloak JWT | List the caller's links (paginated `?limit=&offset=`, with click counts) |
 | GET    | `/api/links/:code/stats`  | Keycloak JWT | Click stats for a short link  |
+| GET    | `/api/links/:code/analytics` | Keycloak JWT | Advanced analytics with timeseries, referrers, devices (Pro/Business only) |
 | GET    | `/:code`                  | —       | Redirect (302) to the original URL |
 
 ### URL shortener

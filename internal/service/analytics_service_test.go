@@ -11,7 +11,7 @@ import (
 func TestAnalyticsService_Record(t *testing.T) {
 	clicks := &mockClickRepo{}
 	links := &mockLinkRepo{}
-	svc := NewAnalyticsService(links, clicks)
+	svc := NewAnalyticsService(links, clicks, nil, nil)
 
 	in := RecordInput{LinkID: 42, Referrer: "https://ref.example", IPAddress: "1.2.3.4", UserAgent: "curl/8"}
 	if err := svc.Record(context.Background(), in); err != nil {
@@ -35,7 +35,7 @@ func TestAnalyticsService_Stats_NotFound(t *testing.T) {
 			return nil, repository.ErrNotFound
 		},
 	}
-	svc := NewAnalyticsService(links, &mockClickRepo{})
+	svc := NewAnalyticsService(links, &mockClickRepo{}, nil, nil)
 
 	_, err := svc.Stats(context.Background(), "missing")
 	wantStatus(t, err, http.StatusNotFound)
@@ -62,7 +62,7 @@ func TestAnalyticsService_Stats_Aggregates(t *testing.T) {
 			return recent, nil
 		},
 	}
-	svc := NewAnalyticsService(links, clicks)
+	svc := NewAnalyticsService(links, clicks, nil, nil)
 
 	stats, err := svc.Stats(context.Background(), "abc123")
 	if err != nil {

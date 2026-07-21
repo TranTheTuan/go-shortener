@@ -83,7 +83,8 @@ Located in `internal/service/`:
 | `AuthService` | Register, login, refresh, logout | UserRepo, RefreshTokenRepo, TokenIssuer |
 | `UserService` | Get user by ID, read operations | UserRepository |
 | `LinkService` | Create link, resolve code (cache-first) | LinkRepo, LinkCacheRepo, ShortcodeGen |
-| `AnalyticsService` | Record clicks, fetch stats | LinkRepo, ClickRepo |
+| `AnalyticsService` | Record clicks, fetch stats, feature gated | LinkRepo, ClickRepo, EntitlementService |
+| `EntitlementService` | Resolve user→plan→feature flag | UserRepo, PlanFeatureRepo |
 
 All services depend on repository **interfaces** (testable, mockable).
 
@@ -305,7 +306,83 @@ KeycloakMiddleware.Verify
 **Count**: Matches filter (not total across all statuses)  
 **Status unknown**: Return 400 (invalid filter value)
 
-### 6. Get User Profile (GET /auth/me)
+### 6. Advanced Analytics (GET /api/links/:code/analytics?range=7d|30d|90d)
+
+```
+Client Request (with Bearer token, link owner)
+    │
+    ▼
+KeycloakMiddleware.Verify
+    │
+    └──► Extract user ID
+        │
+        ▼
+    LinkHandler.GetAnalytics
+        │
+        ├──► Parse short code + range query param
+        │
+        ├──► Call AnalyticsService.GetAnalytics(code, userID, range)
+        │       │
+        │       ├──► Query LinkRepository.GetByCodeAndUserID(code, userID)
+        │       │    └──► Not owner: return 404
+        │       │
+        │       ├──► Check EntitlementService.HasFeature(userID, "analytics.timeseries")
+        │       │    ├──► Not entitled: return 403 (feature gated)
+        │       │    └──► Entitled: proceed
+        │       │
+        │       ├──► Compute date range (7d/30d/90d from today UTC)
+        │       │
+        │       ├──► Query rollup tables for date range
+        │       │    ├──► click_stats_daily (timeseries data)
+        │       │    ├──► click_stats_referrer (referrer breakdown)
+        │       │    └──► click_stats_device (device breakdown)
+        │       │
+        │       └──► Format response {timeseries: [...], referrers: [...], devices: [...]}
+        │
+        └──► Return HTTP 200 with analytics JSON
+```
+
+**Result**: HTTP 200 with timeseries, referrers, devices  
+**Authorization**: Owner-only (404 for non-owner)  
+**Feature gating**: Requires `analytics.timeseries` entitlement (Pro/Business only)  
+**Range**: 7d (1 week), 30d (1 month), 90d (3 months)  
+**Data source**: Aggregated rollup tables (optimized for charting)
+
+### 7. Rollup Write Path (During Kafka Consumer Batch Commit)
+
+```
+Kafka Consumer (batch of clicks with parsed UA/referrer)
+    │
+    ▼
+LinkService.CreateBatch (or similar consumer handler)
+    │
+    ├──► For each click in batch:
+    │       │
+    │       ├──► Parse user-agent → device category (Desktop/Mobile/Tablet/Bot)
+    │       │    └──► Uses pkg/useragent parser
+    │       │
+    │       ├──► Extract referrer domain (or raw if not parseable)
+    │       │    └──► Uses pkg/referrer parser
+    │       │
+    │       ├──► Insert into clicks table (original raw data)
+    │       │
+    │       ├──► Upsert click_stats_daily
+    │       │    └──► link_id, date_utc → increment click_count
+    │       │
+    │       ├──► Upsert click_stats_referrer
+    │       │    └──► link_id, referrer → increment click_count
+    │       │
+    │       └──► Upsert click_stats_device
+    │            └──► link_id, device_type → increment click_count
+    │
+    └──► Commit transaction to PostgreSQL
+```
+
+**Parsing**: Write-time UA + referrer parsing (in consumer, before rollup write)  
+**Rollup granularity**: Daily for timeseries, referrer + device per link  
+**Error handling**: Failed rollup upsert blocks batch commit (fail-safe)
+
+### 8. Get User Profile (GET /auth/me)
 
 ```
 Client Request (with Bearer token from Keycloak)
@@ -381,6 +458,55 @@ ip_address   VARCHAR(45)          (IPv6: 39 chars + safety)
 user_agent   TEXT
 ```
 
+### plan_features table
+```sql
+id           BIGSERIAL PRIMARY KEY
+plan_id      BIGINT NOT NULL FK→plans(id)
+feature_key  VARCHAR(50) NOT NULL          (e.g., "analytics.timeseries", "analytics.referrers")
+enabled      BOOLEAN NOT NULL DEFAULT true
+```
+
+**Examples**:
+- Basic plan: no analytics features
+- Pro plan: `analytics.timeseries`, `analytics.referrers`, `analytics.devices` enabled
+- Business plan: `analytics.timeseries`, `analytics.referrers`, `analytics.devices` enabled
+
+### click_stats_daily table (Rollup)
+```sql
+id           BIGSERIAL PRIMARY KEY
+link_id      BIGINT NOT NULL FK→links(id) CASCADE
+date_utc     DATE NOT NULL
+click_count  INTEGER NOT NULL DEFAULT 0
+created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+```
+
+**Purpose**: Aggregate clicks per link per UTC day (used for timeseries charting)
+
+### click_stats_referrer table (Rollup)
+```sql
+id           BIGSERIAL PRIMARY KEY
+link_id      BIGINT NOT NULL FK→links(id) CASCADE
+referrer     VARCHAR(255)
+click_count  INTEGER NOT NULL DEFAULT 0
+created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+```
+
+**Purpose**: Count unique referrers per link (used for referrer breakdown)
+
+### click_stats_device table (Rollup)
+```sql
+id           BIGSERIAL PRIMARY KEY
+link_id      BIGINT NOT NULL FK→links(id) CASCADE
+device_type  VARCHAR(50)          (parsed from user-agent: Desktop, Mobile, Tablet, Bot)
+click_count  INTEGER NOT NULL DEFAULT 0
+created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+```
+
+**Purpose**: Count clicks by device category (used for device breakdown)
+
 **Indexes**:
 - `users(email)` — UNIQUE
 - `users(username)` — UNIQUE
@@ -388,6 +514,10 @@ user_agent   TEXT
 - `links(short_code)` — UNIQUE
 - `links(user_id)` — FK relationship
 - `clicks(link_id)` — FK relationship
+- `click_stats_daily(link_id, date_utc)` — UNIQUE (prevent double-write)
+- `click_stats_referrer(link_id, referrer)` — UNIQUE
+- `click_stats_device(link_id, device_type)` — UNIQUE
+- `plan_features(plan_id, feature_key)` — UNIQUE
 
 ## Caching Strategy
 

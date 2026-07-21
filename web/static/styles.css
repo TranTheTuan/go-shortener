@@ -699,4 +699,12 @@ button.danger:not(.dropdown-item):hover { background: #c53030; border-color: #9b
   border-color: var(--muted);
 }
 
+/* Advanced analytics */
+.analytics-title { margin: 1.5rem 0 0.75rem; font-size: 1rem; font-weight: 600; }
+.analytics-range-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; }
+.chart-wrap { position: relative; margin-bottom: 1.25rem; }
+.chart-row { display: flex; gap: 1rem; }
+.chart-wrap.half { flex: 1; min-width: 0; }
+.upgrade-prompt { margin-top: 1rem; padding: 0.75rem 1rem; background: var(--panel); border-radius: 6px; border: 1px solid var(--line); }
+
 

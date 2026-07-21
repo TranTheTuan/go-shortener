@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
   <link rel="stylesheet" href="/static/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js" defer></script>
   <!-- Apply the saved theme before first paint to avoid a flash. Light is default. -->
   <script>
     document.documentElement.setAttribute("data-theme", localStorage.getItem("theme") || "light");
@@ -169,6 +170,27 @@
               <thead><tr><th>Time</th><th>Referrer</th><th>IP</th></tr></thead>
               <tbody id="stats-clicks-body"></tbody>
             </table>
+
+            <!-- Advanced analytics (Pro / Business) -->
+            <div id="analytics-section" hidden>
+              <h3 class="analytics-title">Advanced Analytics</h3>
+              <div class="analytics-range-row">
+                <label for="analytics-range">Range</label>
+                <select id="analytics-range">
+                  <option value="7d">Last 7 days</option>
+                  <option value="30d" selected>Last 30 days</option>
+                  <option value="90d">Last 90 days</option>
+                </select>
+              </div>
+              <div class="chart-wrap"><canvas id="chart-timeseries"></canvas></div>
+              <div class="chart-row">
+                <div class="chart-wrap half"><canvas id="chart-referrers"></canvas></div>
+                <div class="chart-wrap half"><canvas id="chart-devices"></canvas></div>
+              </div>
+            </div>
+            <p id="analytics-upgrade" hidden class="upgrade-prompt">
+              Upgrade to <a href="#" data-nav="billing">Pro or Business</a> to unlock advanced analytics (time-series, referrers, device breakdown).
+            </p>
           </div>
         </section>
 

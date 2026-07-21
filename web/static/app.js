@@ -386,7 +386,63 @@ function wireStatsForm(api) {
     } else {
       text("stats-result", "Error: " + (json.error?.message || res.status));
     }
+
+    // Attempt advanced analytics — only works for link owners on Pro/Business.
+    if (res.ok) await loadAdvancedAnalytics(api, code);
   };
+}
+
+// Charts kept in module scope so they can be destroyed on re-query.
+let _tsChart = null, _refChart = null, _devChart = null;
+
+async function loadAdvancedAnalytics(api, code) {
+  const range = $("analytics-range")?.value || "30d";
+  let aRes, aJson;
+  try {
+    aRes = await api("/api/links/" + encodeURIComponent(code) + "/analytics?range=" + range);
+    aJson = await aRes.json().catch(() => ({}));
+  } catch { return; }
+
+  $("analytics-section").hidden = true;
+  $("analytics-upgrade").hidden = true;
+
+  if (aRes.status === 403) {
+    $("analytics-upgrade").hidden = false;
+    return;
+  }
+  if (!aRes.ok) return;
+
+  const d = aJson.data;
+  $("analytics-section").hidden = false;
+
+  _tsChart?.destroy();
+  _refChart?.destroy();
+  _devChart?.destroy();
+
+  _tsChart = new Chart($("chart-timeseries"), {
+    type: "line",
+    data: {
+      labels: d.timeseries.map(p => p.day.slice(0, 10)),
+      datasets: [{ label: "Clicks", data: d.timeseries.map(p => p.clicks), tension: 0.3, fill: true }],
+    },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
+  });
+
+  _refChart = new Chart($("chart-referrers"), {
+    type: "bar",
+    data: {
+      labels: d.referrers.map(r => r.domain),
+      datasets: [{ label: "Clicks", data: d.referrers.map(r => r.clicks) }],
+    },
+    options: { indexAxis: "y", plugins: { legend: { display: false } } },
+  });
+
+  const devLabels = d.devices.map(v => `${v.device} / ${v.browser}`);
+  _devChart = new Chart($("chart-devices"), {
+    type: "doughnut",
+    data: { labels: devLabels, datasets: [{ data: d.devices.map(v => v.clicks) }] },
+    options: { plugins: { legend: { position: "bottom" } } },
+  });
 }
 
 // expiryLabel renders an expiry cell: "—" when null, "expired" when past.
