@@ -40,11 +40,25 @@ const off = (el, ev, fn) => el.removeEventListener(ev, fn);
 // Returns a Promise that resolves true if accepted, false if user closed without accepting.
 async function checkTermsGate(api, cfg, kc) {
   const currentVersion = cfg.termsVersion;
-  const cached = localStorage.getItem("terms_version");
+  const cacheKey = kc.subject + ":" + currentVersion;
 
-  // Fast path: same user already accepted this version
-  if (cached === kc.subject + ":" + currentVersion) {
+  // Fast path: same user already accepted this version on this device
+  if (localStorage.getItem("terms_version") === cacheKey) {
     return true;
+  }
+
+  // Cache miss — check backend so users aren't re-prompted on new devices/browsers
+  try {
+    const res = await api("/api/terms/status");
+    if (res.ok) {
+      const { data } = await res.json();
+      if (data?.accepted) {
+        localStorage.setItem("terms_version", cacheKey);
+        return true;
+      }
+    }
+  } catch {
+    // If status check fails, fall through and show modal
   }
 
   // Show modal and wait for user decision
@@ -80,7 +94,7 @@ async function checkTermsGate(api, cfg, kc) {
         }
 
         // Cache the acceptance
-        localStorage.setItem("terms_version", kc.subject + ":" + currentVersion);
+        localStorage.setItem("terms_version", cacheKey);
 
         // Clean up and resolve
         cleanup();

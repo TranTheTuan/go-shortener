@@ -111,6 +111,7 @@ func registerRoutes(e *echo.Echo, h Handlers, deps Deps) {
 	// user owns the links and is subject to the daily quota.
 	api := e.Group("/api", keycloakMW)
 	api.POST("/terms/accept", h.Auth.AcceptTerms, keycloakMW)
+	api.GET("/terms/status", h.Auth.TermsStatus, keycloakMW)
 	links := api.Group("/links")
 	// Create chain: dedup fast-path → quota check → handler.
 	links.POST("", h.Link.Create, appmw.DuplicateURLCheck(deps.Dedup), appmw.QuotaCheck(deps.Quota))
