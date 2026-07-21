@@ -51,6 +51,30 @@ func (h *AuthHandler) Me(c echo.Context) error {
 	return response.Success(c, http.StatusOK, user)
 }
 
+// TermsStatus handles GET /api/terms/status.
+//
+// @Summary      Get terms acceptance status
+// @Tags         auth
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  response.Envelope  "accepted: bool"
+// @Failure      401  {object}  response.Envelope
+// @Failure      500  {object}  response.Envelope
+// @Router       /api/terms/status [get]
+func (h *AuthHandler) TermsStatus(c echo.Context) error {
+	userID, ok := appmw.UserIDFrom(c)
+	if !ok {
+		return response.Error(c, apperror.New(http.StatusUnauthorized, "UNAUTHORIZED", "not authenticated"))
+	}
+
+	accepted, err := h.users.TermsAccepted(c.Request().Context(), userID)
+	if err != nil {
+		return response.Error(c, err)
+	}
+
+	return response.Success(c, http.StatusOK, map[string]bool{"accepted": accepted})
+}
+
 // AcceptTerms handles POST /api/terms/accept.
 //
 // @Summary      Accept Terms & Conditions

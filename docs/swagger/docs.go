@@ -755,6 +755,95 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/terms/accept": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Accept Terms \u0026 Conditions",
+                "parameters": [
+                    {
+                        "description": "terms version",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.acceptTermsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "invalid version or user not found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    },
+                    "401": {
+                        "description": "not authenticated",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/terms/status": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Get terms acceptance status",
+                "responses": {
+                    "200": {
+                        "description": "accepted: bool",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/me": {
             "get": {
                 "security": [
@@ -980,14 +1069,14 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
-                "daily_link_quota": {
-                    "type": "integer"
-                },
                 "id": {
                     "type": "integer"
                 },
                 "is_active": {
                     "type": "boolean"
+                },
+                "monthly_link_quota": {
+                    "type": "integer"
                 },
                 "name": {
                     "type": "string"
@@ -1019,6 +1108,12 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "name": {
+                    "type": "string"
+                },
+                "terms_accepted_at": {
+                    "type": "string"
+                },
+                "terms_version": {
                     "type": "string"
                 },
                 "updated_at": {
@@ -1062,6 +1157,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.acceptTermsRequest": {
+            "type": "object",
+            "properties": {
+                "version": {
                     "type": "string"
                 }
             }

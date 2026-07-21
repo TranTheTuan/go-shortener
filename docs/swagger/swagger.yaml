@@ -21,12 +21,12 @@ definitions:
         type: string
       created_at:
         type: string
-      daily_link_quota:
-        type: integer
       id:
         type: integer
       is_active:
         type: boolean
+      monthly_link_quota:
+        type: integer
       name:
         type: string
       paddle_price_id_monthly:
@@ -47,6 +47,10 @@ definitions:
       id:
         type: integer
       name:
+        type: string
+      terms_accepted_at:
+        type: string
+      terms_version:
         type: string
       updated_at:
         type: string
@@ -75,6 +79,11 @@ definitions:
       code:
         type: string
       message:
+        type: string
+    type: object
+  internal_handler.acceptTermsRequest:
+    properties:
+      version:
         type: string
     type: object
   internal_handler.bulkJobResponse:
@@ -708,6 +717,61 @@ paths:
       summary: Change active subscription plan tier and/or billing interval
       tags:
       - billing
+  /api/terms/accept:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: terms version
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.acceptTermsRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: invalid version or user not found
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "401":
+          description: not authenticated
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Accept Terms & Conditions
+      tags:
+      - auth
+  /api/terms/status:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 'accepted: bool'
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_TranTheTuan_go-shortener_pkg_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Get terms acceptance status
+      tags:
+      - auth
   /auth/me:
     get:
       produces:

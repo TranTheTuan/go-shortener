@@ -35,6 +35,8 @@ type UserService interface {
 	// AcceptTerms records user acceptance of the current T&C version.
 	// Returns 400 TERMS_VERSION_MISMATCH if the provided version doesn't match the current version.
 	AcceptTerms(ctx context.Context, userID int64, version string) error
+	// TermsAccepted reports whether the user has accepted the current T&C version.
+	TermsAccepted(ctx context.Context, userID int64) (bool, error)
 }
 
 // userService is the default UserService backed by a UserRepository. It also
@@ -158,4 +160,13 @@ func (s *userService) AcceptTerms(ctx context.Context, userID int64, version str
 
 	slog.Debug("terms accepted", "user_id", userID, "version", version, "accepted_at", acceptedAt)
 	return nil
+}
+
+// TermsAccepted reports whether the user has accepted the current T&C version.
+func (s *userService) TermsAccepted(ctx context.Context, userID int64) (bool, error) {
+	user, err := s.repo.GetByID(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	return user.TermsVersion != nil && *user.TermsVersion == s.termsCurrentVersion, nil
 }
