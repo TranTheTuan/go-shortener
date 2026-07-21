@@ -10,10 +10,10 @@ import (
 
 // PlanFeature is a feature-flag row linking a plan to a capability.
 type PlanFeature struct {
-	ID         uint64    `gorm:"primaryKey"`
-	PlanID     int64     `gorm:"not null"`
-	FeatureKey string    `gorm:"size:64;not null"`
-	Enabled    bool      `gorm:"not null;default:true"`
+	ID         uint64 `gorm:"primaryKey"`
+	PlanID     int64  `gorm:"not null"`
+	FeatureKey string `gorm:"size:64;not null"`
+	Enabled    bool   `gorm:"not null;default:true"`
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 }

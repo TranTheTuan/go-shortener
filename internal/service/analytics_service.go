@@ -38,11 +38,11 @@ type AnalyticsService interface {
 // analyticsService is the default AnalyticsService backed by the link and click
 // repositories.
 type analyticsService struct {
-	links     repository.LinkRepository
-	clicks    repository.ClickRepository
-	stats     repository.ClickStatsRepository
-	entitle   EntitlementService
-	now       func() time.Time
+	links   repository.LinkRepository
+	clicks  repository.ClickRepository
+	stats   repository.ClickStatsRepository
+	entitle EntitlementService
+	now     func() time.Time
 }
 
 // NewAnalyticsService wires an AnalyticsService to its repositories.

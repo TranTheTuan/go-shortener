@@ -15,11 +15,11 @@ const advancedDeviceLimit = 50
 
 // AdvancedStats is the payload returned by the advanced analytics endpoint.
 type AdvancedStats struct {
-	ShortCode  string                    `json:"short_code"`
-	Range      string                    `json:"range"`
-	Timeseries []repository.DailyPoint   `json:"timeseries"`
+	ShortCode  string                     `json:"short_code"`
+	Range      string                     `json:"range"`
+	Timeseries []repository.DailyPoint    `json:"timeseries"`
 	Referrers  []repository.ReferrerPoint `json:"referrers"`
-	Devices    []repository.DevicePoint  `json:"devices"`
+	Devices    []repository.DevicePoint   `json:"devices"`
 }
 
 // Advanced returns advanced rollup analytics for a link, gated by entitlement.
