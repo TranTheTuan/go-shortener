@@ -117,6 +117,7 @@ func registerRoutes(e *echo.Echo, h Handlers, deps Deps) {
 	links.POST("", h.Link.Create, appmw.DuplicateURLCheck(deps.Dedup), appmw.QuotaCheck(deps.Quota))
 	links.GET("", h.Link.List)
 	links.GET("/:code/stats", h.Link.Stats)
+	links.GET("/:code/analytics", h.Link.Analytics)
 	links.PUT("/:code", h.Link.Update)
 	links.DELETE("/:code", h.Link.Delete)
 

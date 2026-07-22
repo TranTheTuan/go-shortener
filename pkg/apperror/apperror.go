@@ -83,6 +83,21 @@ func UnprocessableEntity(message string) *Error {
 	return New(http.StatusUnprocessableEntity, "UNPROCESSABLE", message)
 }
 
+// Forbidden reports a server-side authorization failure (HTTP 403).
+func Forbidden(message string) *Error {
+	return New(http.StatusForbidden, "FORBIDDEN", message)
+}
+
+// FeatureLocked reports that the requested feature requires a higher-tier plan (HTTP 403).
+func FeatureLocked(message string) *Error {
+	return New(http.StatusForbidden, "FEATURE_LOCKED", message)
+}
+
+// Unauthorized reports a missing or invalid authentication credential (HTTP 401).
+func Unauthorized(message string) *Error {
+	return New(http.StatusUnauthorized, "UNAUTHORIZED", message)
+}
+
 // Internal reports an unexpected server-side failure (HTTP 500). The cause is
 // wrapped for logging but never shown to clients.
 func Internal(err error) *Error {

@@ -5,6 +5,18 @@ All notable changes to the go-shortener project are documented here.
 ## [Unreleased]
 
 ### Added
+- **Advanced Analytics with Tiered Feature Gating** — Timeseries, referrer, and device analytics gated by subscription plan
+  - 4 new database tables: `plan_features` (feature flags per plan), `click_stats_daily`, `click_stats_referrer`, `click_stats_device` (rollup tables)
+  - Pro/Business plans seeded with `analytics.timeseries`, `analytics.referrers`, `analytics.devices` feature flags; Basic plan has none
+  - New pkg: `pkg/useragent` — Parse user-agent to device category (Desktop, Mobile, Tablet, Bot)
+  - New pkg: `pkg/referrer` — Extract referrer domain from request header
+  - EntitlementService: Resolves user→plan→feature flag for authorization checks
+  - Rollup writes integrated into Kafka consumer batch commit: parse UA/referrer at write-time, upsert aggregates (daily count, referrer breakdown, device breakdown)
+  - New endpoint: `GET /api/links/:code/analytics?range=7d|30d|90d` — Owner-scoped, feature-gated (401 for non-owner, 403 if no entitlement), returns `{timeseries: [...], referrers: [...], devices: [...]}`
+  - Frontend: Chart.js charts shown for Pro/Business users; upgrade prompt for Basic plan
+  - Schema migration: 4 new tables with unique indexes on (link_id, date_utc), (link_id, referrer), (link_id, device_type), (plan_id, feature_key)
+
+### Added
 - **Terms & Conditions Acceptance Gate** — Versioned T&C acceptance with modal UX
   - DB migration: `user_agreements` table tracks per-user acceptance (user_id, version, accepted_at)
   - Backend endpoint `POST /api/agreements/accept/{version}` for acceptance tracking

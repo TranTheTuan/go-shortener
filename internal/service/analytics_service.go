@@ -32,22 +32,32 @@ type LinkStats struct {
 type AnalyticsService interface {
 	Record(ctx context.Context, in RecordInput) error
 	Stats(ctx context.Context, code string) (*LinkStats, error)
+	Advanced(ctx context.Context, code string, userID int64, rangeStr string) (*AdvancedStats, error)
 }
 
 // analyticsService is the default AnalyticsService backed by the link and click
 // repositories.
 type analyticsService struct {
-	links  repository.LinkRepository
-	clicks repository.ClickRepository
-	now    func() time.Time
+	links   repository.LinkRepository
+	clicks  repository.ClickRepository
+	stats   repository.ClickStatsRepository
+	entitle EntitlementService
+	now     func() time.Time
 }
 
 // NewAnalyticsService wires an AnalyticsService to its repositories.
-func NewAnalyticsService(links repository.LinkRepository, clicks repository.ClickRepository) AnalyticsService {
+func NewAnalyticsService(
+	links repository.LinkRepository,
+	clicks repository.ClickRepository,
+	stats repository.ClickStatsRepository,
+	entitle EntitlementService,
+) AnalyticsService {
 	return &analyticsService{
-		links:  links,
-		clicks: clicks,
-		now:    time.Now,
+		links:   links,
+		clicks:  clicks,
+		stats:   stats,
+		entitle: entitle,
+		now:     time.Now,
 	}
 }
 

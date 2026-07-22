@@ -37,9 +37,9 @@ func NewClickRepository(db *gorm.DB) ClickRepository {
 	return &clickRepository{db: db}
 }
 
-// Create inserts a single click event.
+// Create inserts a single click event and updates rollup tables.
 func (r *clickRepository) Create(ctx context.Context, click *Click) error {
-	return r.db.WithContext(ctx).Create(click).Error
+	return r.CreateBatch(ctx, []*Click{click})
 }
 
 // CreateBatch bulk-inserts click events in chunks of 500.
@@ -52,22 +52,21 @@ func (r *clickRepository) CreateBatch(ctx context.Context, clicks []*Click) erro
 			return err
 		}
 
-		// BƯỚC B: Gom nhóm đếm số click theo link_id ngay trên RAM của Go
-		// Ví dụ trong batch có 500 click, nhưng thực chất chỉ thuộc về 3 link khác nhau
+		// Aggregate click counts per link_id in memory.
+		// e.g. 500 clicks in the batch may belong to only 3 distinct links.
 		linkClickMap := make(map[int64]int64)
 		for _, c := range clicks {
 			linkClickMap[c.LinkID]++
 		}
 
-		// Trích xuất các LinkID ra một Slice để chuẩn bị SORT
+		// Extract link IDs into a slice for sorting.
 		linkIDs := make([]int64, 0, len(linkClickMap))
 		for linkID := range linkClickMap {
 			linkIDs = append(linkIDs, linkID)
 		}
 
-		// ⚠️ Sắp xếp LinkID tăng dần
-		// Nếu Pod 1 update ID [1, 2], Pod 2 cũng update theo thứ tự [1, 2] -> Không bao giờ bị Deadlock.
-		// Nếu không sort, Pod 1 lock 1 chờ 2, Pod 2 lock 2 chờ 1 -> Deadlock!
+		// Sort link IDs ascending so all pods acquire row locks in the same order,
+		// preventing deadlocks when two pods process overlapping batches concurrently.
 		sort.Slice(linkIDs, func(i, j int) bool {
 			return linkIDs[i] < linkIDs[j]
 		})
@@ -84,7 +83,7 @@ func (r *clickRepository) CreateBatch(ctx context.Context, clicks []*Click) erro
 			}
 		}
 
-		return nil
+		return upsertRollups(tx, clicks)
 	})
 }
 

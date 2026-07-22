@@ -40,6 +40,7 @@ func runAnalyzeConsumer() error {
 	}
 
 	clickRepo := repository.NewClickRepository(db)
+	// clickRepo.CreateBatch upserts analytics rollups (click_stats_daily/referrer/device) inside the same tx.
 	consumer, err := events.NewClickConsumer(cfg.Kafka, clickRepo)
 	if err != nil {
 		return err
